@@ -172,6 +172,43 @@
   .list-row:last-child{border-bottom:none;}
   .list-row .asset{font-weight:500;}
   .list-row .val{font-family:'IBM Plex Mono',monospace;color:var(--text-dim);}
+  .alert-item{
+    padding:10px 0;
+    border-bottom:1px solid var(--border);
+    font-size:13px;
+  }
+  .alert-item:last-child{border-bottom:none;}
+  .alert-item summary{
+    cursor:pointer;
+    list-style:none;
+  }
+  .alert-item summary::-webkit-details-marker{display:none;}
+  .alert-item summary::after{
+    content:'kenapa ini? ▾';
+    display:inline-block;
+    margin-top:6px;
+    font-size:11px;
+    color:var(--purple);
+  }
+  .alert-item[open] summary::after{content:'sembunyikan ▴';}
+  .alert-reasons{
+    margin:10px 0 0 0;
+    padding:0;
+    list-style:none;
+    color:var(--text-dim);
+    font-size:12px;
+    line-height:1.7;
+  }
+  .alert-reasons li{
+    padding-left:14px;
+    position:relative;
+    margin-bottom:5px;
+  }
+  .alert-reasons li::before{
+    content:'—';
+    position:absolute;
+    left:0;
+  }
   .placeholder-note{
     margin-top:16px;
     font-size:12px;
@@ -266,6 +303,33 @@
 
   const urgencyColor = { tinggi: 'var(--danger)', sedang: '#E8B339', rendah: 'var(--text-dim)' };
 
+  // Judul berita dari RSS feed itu konten dari luar (bukan dari kita) — di-escape dulu
+  // sebelum ditaruh lewat innerHTML biar aman, bukan cuma soal tampilan.
+  function escapeHtml(str){
+    const div = document.createElement('div');
+    div.textContent = String(str ?? '');
+    return div.innerHTML;
+  }
+
+  // Cuma link http/https yang boleh dirender jadi <a href>, biar link berita dari RSS
+  // luar tidak bisa disalahgunakan jadi javascript: URL atau semacamnya.
+  function safeUrl(url){
+    try {
+      const u = new URL(url);
+      if (u.protocol === 'http:' || u.protocol === 'https:') return u.href;
+    } catch { /* bukan URL valid, abaikan */ }
+    return null;
+  }
+
+  function renderReason(r){
+    // Baris lama (sebelum migrasi reasons jadi jsonb terstruktur) masih plain string.
+    if (typeof r === 'string') return `<li>${escapeHtml(r)}</li>`;
+    const text = escapeHtml(r.text);
+    const link = r.link ? safeUrl(r.link) : null;
+    const linkHtml = link ? ` <a href="${escapeHtml(link)}" target="_blank" rel="noopener noreferrer" style="color:var(--purple);">baca sumber ↗</a>` : '';
+    return `<li>${text}${linkHtml}</li>`;
+  }
+
   async function loadAlerts(){
     const alertRows = document.getElementById('alertRows');
     if (!supabase) {
@@ -279,21 +343,32 @@
       .limit(15);
 
     if (error) {
-      alertRows.innerHTML = `<div class="placeholder-note" style="margin-top:0;padding-top:0;border-top:none;">Gagal memuat alert: ${error.message}</div>`;
+      alertRows.innerHTML = `<div class="placeholder-note" style="margin-top:0;padding-top:0;border-top:none;">Gagal memuat alert: ${escapeHtml(error.message)}</div>`;
       return;
     }
     if (!data || data.length === 0) {
       alertRows.innerHTML = '<div class="placeholder-note" style="margin-top:0;padding-top:0;border-top:none;">Belum ada alert tersimpan. Cek apakah Edge Function poll-market sudah dijadwalkan lewat pg_cron.</div>';
       return;
     }
-    alertRows.innerHTML = data.map(a => `
-      <div class="list-row" style="align-items:flex-start;">
-        <div>
-          <div class="asset">${a.asset} — $${a.current_price} <span style="color:${urgencyColor[a.urgency] || 'var(--text-dim)'};font-size:11px;">● ${a.urgency}</span></div>
-          <div style="color:var(--text-dim);font-size:12px;margin-top:2px;">${a.bias} · ${new Date(a.created_at).toLocaleString('id-ID')}</div>
-        </div>
-      </div>
-    `).join('');
+    alertRows.innerHTML = data.map(a => {
+      const reasons = Array.isArray(a.reasons) ? a.reasons : [];
+      const reasonsHtml = reasons.length
+        ? `<ul class="alert-reasons">${reasons.map(renderReason).join('')}</ul>`
+        : `<div class="alert-reasons" style="padding-left:0;">Tidak ada rincian tersimpan untuk alert ini.</div>`;
+      const summaryHtml = a.summary
+        ? `<div style="margin-top:8px;font-size:12px;">${escapeHtml(a.summary)}</div>`
+        : '';
+      return `
+      <details class="alert-item">
+        <summary>
+          <div class="asset">${escapeHtml(a.asset)} — $${escapeHtml(a.current_price)} <span style="color:${urgencyColor[a.urgency] || 'var(--text-dim)'};font-size:11px;">● ${escapeHtml(a.urgency)}</span></div>
+          <div style="color:var(--text-dim);font-size:12px;margin-top:2px;">${escapeHtml(a.bias)} · ${new Date(a.created_at).toLocaleString('id-ID')}</div>
+        </summary>
+        ${summaryHtml}
+        ${reasonsHtml}
+      </details>
+    `;
+    }).join('');
   }
 
   loadAlerts();
