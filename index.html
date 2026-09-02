@@ -244,10 +244,13 @@
   <div class="brand">
     <span class="brand-dot"></span>
     Market Watch
-    <span class="stage-tag">Tahap 1 — wallet & saldo</span>
+    <span class="stage-tag">Alert-only · Non-custodial</span>
   </div>
-  <div id="walletArea">
-    <button id="connectBtn">Connect Phantom</button>
+  <div style="display:flex;align-items:center;gap:10px;">
+    <button id="notifBtn" style="background:var(--panel);border:1px solid var(--border);color:var(--text-dim);font-family:'Inter',sans-serif;font-weight:500;font-size:13px;padding:9px 14px;border-radius:8px;cursor:pointer;">🔔 Aktifkan Notifikasi</button>
+    <div id="walletArea">
+      <button id="connectBtn">Connect Phantom</button>
+    </div>
   </div>
 </header>
 
@@ -271,21 +274,65 @@
       </div>
 
       <div class="card">
-        <h3>Watchlist (dari config.py)</h3>
+        <h3 style="display:flex;justify-content:space-between;align-items:center;">
+          <span>Watchlist</span>
+          <span id="watchlistUpdated" style="font-weight:400;font-size:11px;color:var(--text-dim);"></span>
+        </h3>
         <div id="watchlistRows"></div>
-        <div class="placeholder-note">Harga live & sinyal RSI/volume dari signal_engine.py akan masuk di Tahap 2, setelah engine disambungkan ke Supabase.</div>
       </div>
     </div>
 
     <div class="card" style="margin-top:16px;">
-      <h3>Alert Terbaru</h3>
+      <h3 style="display:flex;justify-content:space-between;align-items:center;">
+        <span>Alert Terbaru</span>
+        <span id="alertsUpdated" style="font-weight:400;font-size:11px;color:var(--text-dim);"></span>
+      </h3>
       <div id="alertRows"><div class="placeholder-note" style="margin-top:0;padding-top:0;border-top:none;">Memuat…</div></div>
     </div>
 
     <div class="card" style="margin-top:16px;">
-      <h3>Token Screener — Solana Baru (Jupiter organicScore)</h3>
+      <h3 style="display:flex;justify-content:space-between;align-items:center;">
+        <span>Win Rate — Akurasi Sinyal (24 jam)</span>
+        <span id="winrateUpdated" style="font-weight:400;font-size:11px;color:var(--text-dim);"></span>
+      </h3>
+      <div id="winrateBody"><div class="placeholder-note" style="margin-top:0;padding-top:0;border-top:none;">Memuat…</div></div>
+      <div class="placeholder-note">Dihitung dari Edge Function check-alert-outcomes yang cek harga tiap alert 24 jam setelah dikirim. Butuh minimal 1 hari berjalan sebelum data mulai muncul.</div>
+    </div>
+
+    <div class="card" style="margin-top:16px;">
+      <h3 style="display:flex;justify-content:space-between;align-items:center;">
+        <span>Token Screener — Solana Baru (Jupiter organicScore)</span>
+        <span id="screenerUpdated" style="font-weight:400;font-size:11px;color:var(--text-dim);"></span>
+      </h3>
       <div id="screenerRows"><div class="placeholder-note" style="margin-top:0;padding-top:0;border-top:none;">Memuat…</div></div>
       <div class="placeholder-note">⚠️ Filter ini cuma cek organicScore + mint/freeze authority + top holder %. LP lock/burn BELUM diverifikasi otomatis — selalu cek manual di DexScreener/jup.ag sebelum swap token manapun dari daftar ini.</div>
+    </div>
+
+    <div class="card" style="margin-top:16px;">
+      <h3>Kalkulator Ukuran Posisi (Risk Management)</h3>
+      <div class="placeholder-note" style="margin-top:0;padding-top:0;border-top:none;margin-bottom:14px;">
+        Ini cuma kalkulator — tidak membuka posisi apapun. Membantu kamu menentukan ukuran posisi yang wajar berdasarkan saldo & toleransi risiko, sebelum kamu eksekusi manual sendiri di Jupiter.
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px;">
+        <div>
+          <label style="display:block;font-size:12px;color:var(--text-dim);margin-bottom:4px;">Saldo (USD)</label>
+          <input type="number" id="riskBalance" placeholder="cth. 500" style="width:100%;background:var(--panel-2);border:1px solid var(--border);color:var(--text);padding:8px 10px;border-radius:6px;font-family:'IBM Plex Mono',monospace;font-size:13px;">
+        </div>
+        <div>
+          <label style="display:block;font-size:12px;color:var(--text-dim);margin-bottom:4px;">Risiko per trade (%)</label>
+          <input type="number" id="riskPct" placeholder="cth. 1" value="1" style="width:100%;background:var(--panel-2);border:1px solid var(--border);color:var(--text);padding:8px 10px;border-radius:6px;font-family:'IBM Plex Mono',monospace;font-size:13px;">
+        </div>
+        <div>
+          <label style="display:block;font-size:12px;color:var(--text-dim);margin-bottom:4px;">Harga entry (USD)</label>
+          <input type="number" id="riskEntry" placeholder="cth. 150" style="width:100%;background:var(--panel-2);border:1px solid var(--border);color:var(--text);padding:8px 10px;border-radius:6px;font-family:'IBM Plex Mono',monospace;font-size:13px;">
+        </div>
+        <div>
+          <label style="display:block;font-size:12px;color:var(--text-dim);margin-bottom:4px;">Harga stop loss (USD)</label>
+          <input type="number" id="riskStop" placeholder="cth. 142" style="width:100%;background:var(--panel-2);border:1px solid var(--border);color:var(--text);padding:8px 10px;border-radius:6px;font-family:'IBM Plex Mono',monospace;font-size:13px;">
+        </div>
+      </div>
+      <button id="calcRiskBtn" style="background:linear-gradient(135deg,var(--purple),var(--teal));color:#08110C;border:none;font-family:'Inter',sans-serif;font-weight:600;font-size:13px;padding:9px 16px;border-radius:8px;cursor:pointer;">Hitung</button>
+      <div id="riskResult" style="margin-top:14px;"></div>
     </div>
 
     <div class="card" style="margin-top:16px;">
@@ -303,8 +350,8 @@
   // Isi 2 nilai ini dari Project Settings > API di Supabase kamu.
   // SUPABASE_ANON_KEY aman ditaruh di frontend (read-only lewat RLS policy di schema.sql).
   // JANGAN pernah taruh service_role key di sini.
-  const SUPABASE_URL = 'https://ylaednlaqgunzfuaagit.supabase.co';
-  const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlsYWVkbmxhcWd1bnpmdWFhZ2l0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgxNjgxMTYsImV4cCI6MjEwMzc0NDExNn0._z6aEVYcHLwEj2WLUoRGBGHEnHEf7a-_YM9FXxDSm1g';
+  const SUPABASE_URL = 'ISI_URL_PROJECT_SUPABASE_KAMU';
+  const SUPABASE_ANON_KEY = 'ISI_ANON_KEY_KAMU';
 
   let supabase = null;
   if (!SUPABASE_URL.startsWith('ISI_')) {
@@ -312,6 +359,85 @@
   }
 
   const urgencyColor = { tinggi: 'var(--danger)', sedang: '#E8B339', rendah: 'var(--text-dim)' };
+  const biasColor = { bullish: 'var(--teal)', bearish: 'var(--danger)' };
+
+  // --- Notifikasi browser (Notification API bawaan, bukan push server) ---
+  const notifBtn = document.getElementById('notifBtn');
+
+  function loadSeenIds(key){
+    try { return new Set(JSON.parse(localStorage.getItem(key) || '[]')); }
+    catch { return new Set(); }
+  }
+  function saveSeenIds(key, set){
+    const arr = Array.from(set).slice(-300); // batasi biar gak numpuk
+    localStorage.setItem(key, JSON.stringify(arr));
+  }
+  let seenAlertIds = loadSeenIds('seenAlertIds');
+  let seenScreenerIds = loadSeenIds('seenScreenerIds');
+  let alertsFirstLoad = true;
+  let screenerFirstLoad = true;
+
+  function updateNotifBtn(){
+    if (!('Notification' in window)) {
+      notifBtn.textContent = '🔕 Browser tidak dukung notifikasi';
+      notifBtn.disabled = true;
+      return;
+    }
+    if (Notification.permission === 'granted') {
+      notifBtn.textContent = '🔔 Notifikasi aktif';
+    } else if (Notification.permission === 'denied') {
+      notifBtn.textContent = '🔕 Notifikasi diblokir (cek setting browser)';
+    } else {
+      notifBtn.textContent = '🔔 Aktifkan Notifikasi';
+    }
+  }
+  updateNotifBtn();
+
+  notifBtn.addEventListener('click', async () => {
+    if (!('Notification' in window)) return;
+    if (Notification.permission === 'default') {
+      await Notification.requestPermission();
+      updateNotifBtn();
+    } else if (Notification.permission === 'granted') {
+      new Notification('Market Watch', { body: 'Notifikasi sudah aktif. Kamu akan diberi tahu kalau ada alert baru selama tab ini terbuka.' });
+    }
+  });
+
+  function notify(title, body){
+    if ('Notification' in window && Notification.permission === 'granted') {
+      new Notification(title, { body });
+    }
+  }
+  // --- end notifikasi ---
+
+  // Sesuai WATCHED_ASSETS di config.py
+  const WATCHLIST = ["BTC", "ETH", "SOL", "DOGE", "BONK", "PENGU"];
+  let latestByAsset = {};
+
+  function timeAgo(dateStr){
+    const diffMs = Date.now() - new Date(dateStr).getTime();
+    const mins = Math.round(diffMs / 60000);
+    if (mins < 1) return 'baru saja';
+    if (mins < 60) return `${mins} menit lalu`;
+    const hrs = Math.round(mins / 60);
+    return `${hrs} jam lalu`;
+  }
+
+  function updateWatchlistDisplay(){
+    const watchlistRows = document.getElementById('watchlistRows');
+    if (!watchlistRows) return; // belum connect, kartu belum dirender
+    watchlistRows.innerHTML = WATCHLIST.map(sym => {
+      const a = latestByAsset[sym];
+      if (!a) {
+        return `<div class="list-row"><span class="asset">${sym}</span><span class="val">menunggu data</span></div>`;
+      }
+      const color = biasColor[a.bias] || 'var(--text-dim)';
+      return `<div class="list-row">
+        <span class="asset">${sym} <span style="color:var(--text-dim);font-weight:400;">· ${a.bias || '—'}</span></span>
+        <span class="val" style="color:${color};">$${a.current_price}</span>
+      </div>`;
+    }).join('');
+  }
 
   async function loadAlerts(){
     const alertRows = document.getElementById('alertRows');
@@ -323,7 +449,7 @@
       .from('alerts')
       .select('*')
       .order('created_at', { ascending: false })
-      .limit(15);
+      .limit(60);
 
     if (error) {
       alertRows.innerHTML = `<div class="placeholder-note" style="margin-top:0;padding-top:0;border-top:none;">Gagal memuat alert: ${error.message}</div>`;
@@ -333,7 +459,29 @@
       alertRows.innerHTML = '<div class="placeholder-note" style="margin-top:0;padding-top:0;border-top:none;">Belum ada alert tersimpan. Cek apakah Edge Function poll-market sudah dijadwalkan lewat pg_cron.</div>';
       return;
     }
-    alertRows.innerHTML = data.map(a => `
+
+    // data sudah urut terbaru->terlama, jadi kemunculan pertama per asset = data paling baru
+    latestByAsset = {};
+    for (const a of data) {
+      if (!latestByAsset[a.asset]) latestByAsset[a.asset] = a;
+    }
+    updateWatchlistDisplay();
+
+    // notifikasi untuk alert baru (skip di load pertama, biar gak banjir notif)
+    if (!alertsFirstLoad) {
+      const newOnes = data.filter(a => !seenAlertIds.has(a.id));
+      for (const a of newOnes) {
+        notify(`Alert: ${a.asset} — ${a.bias}`, `$${a.current_price} · urgency ${a.urgency}`);
+      }
+    }
+    data.forEach(a => seenAlertIds.add(a.id));
+    saveSeenIds('seenAlertIds', seenAlertIds);
+    alertsFirstLoad = false;
+
+    const freshnessEl = document.getElementById('alertsUpdated');
+    if (freshnessEl) freshnessEl.textContent = `diperbarui ${timeAgo(data[0].created_at)}`;
+
+    alertRows.innerHTML = data.slice(0, 15).map(a => `
       <div class="list-row" style="align-items:flex-start;">
         <div>
           <div class="asset">${a.asset} — $${a.current_price} <span style="color:${urgencyColor[a.urgency] || 'var(--text-dim)'};font-size:11px;">● ${a.urgency}</span></div>
@@ -379,17 +527,35 @@
       return;
     }
 
+    const freshnessEl = document.getElementById('screenerUpdated');
+    if (freshnessEl) freshnessEl.textContent = `diperbarui ${timeAgo(data[0].created_at)}`;
+
+    // notifikasi untuk token baru yang lolos filter (skip di load pertama)
+    if (!screenerFirstLoad) {
+      const newOnes = data.filter(t => !seenScreenerIds.has(t.id));
+      for (const t of newOnes) {
+        notify(`Token baru lolos filter: ${t.token_symbol || '?'}`, `Organic score ${Number(t.organic_score ?? 0).toFixed(0)} · cek LP lock manual sebelum swap`);
+      }
+    }
+    data.forEach(t => seenScreenerIds.add(t.id));
+    saveSeenIds('seenScreenerIds', seenScreenerIds);
+    screenerFirstLoad = false;
+
     screenerRows.innerHTML = data.map(t => {
       const label = t.organic_score >= 70 ? 'high' : t.organic_score >= 50 ? 'medium' : 'low';
       const reasons = Array.isArray(t.reasons) ? t.reasons : [];
+      const rcBadge = t.rugcheck_checked
+        ? `<span class="score-badge score-high" style="margin-left:6px;">RugCheck OK</span>`
+        : `<span class="score-badge score-low" style="margin-left:6px;">RugCheck n/a</span>`;
+      const momentumIcon = t.momentum === 'naik' ? '📈' : t.momentum === 'turun' ? '📉' : t.momentum === 'stabil' ? '➡️' : '';
       return `
         <div class="screener-item">
           <div class="screener-head">
             <span><span class="sym">${t.token_symbol || '?'}</span> <span class="name">${t.token_name || ''}</span></span>
-            <span class="score-badge ${scoreClass(label)}">Organic ${Number(t.organic_score ?? 0).toFixed(0)}</span>
+            <span><span class="score-badge ${scoreClass(label)}">Organic ${Number(t.organic_score ?? 0).toFixed(0)}</span>${rcBadge}</span>
           </div>
           <div class="screener-meta">
-            Liquidity ${fmtUsd(t.liquidity_usd)} · Vol 24h ${fmtUsd(t.volume_24h_usd)} · 24h ${fmtPct(t.price_change_24h_pct)} · Top holder ${t.top_holder_pct != null ? Number(t.top_holder_pct).toFixed(2) + '%' : '—'}
+            Liquidity ${fmtUsd(t.liquidity_usd)} · Vol 24h ${fmtUsd(t.volume_24h_usd)} · 24h ${fmtPct(t.price_change_24h_pct)} · Top holder ${t.top_holder_pct != null ? Number(t.top_holder_pct).toFixed(2) + '%' : '—'} ${momentumIcon ? '· Momentum ' + momentumIcon + ' ' + t.momentum : ''}
           </div>
           <div class="screener-meta" style="word-break:break-all;">${t.token_address || ''}</div>
           ${reasons.length ? `<ul class="screener-reasons">${reasons.map(r => `<li>${r}</li>`).join('')}</ul>` : ''}
@@ -401,6 +567,83 @@
 
   loadTokenScreenerAlerts();
 
+  // cek data baru tiap 60 detik selama tab ini terbuka (buat notifikasi real-time)
+  setInterval(() => {
+    loadAlerts();
+    loadTokenScreenerAlerts();
+  }, 60000);
+
+  const calcRiskBtn = document.getElementById('calcRiskBtn');
+  const riskResult = document.getElementById('riskResult');
+
+  calcRiskBtn.addEventListener('click', () => {
+    const balance = parseFloat(document.getElementById('riskBalance').value);
+    const riskPct = parseFloat(document.getElementById('riskPct').value);
+    const entry = parseFloat(document.getElementById('riskEntry').value);
+    const stop = parseFloat(document.getElementById('riskStop').value);
+
+    if (!balance || !riskPct || !entry || !stop) {
+      riskResult.innerHTML = '<div class="placeholder-note" style="margin-top:0;padding-top:0;border-top:none;">Isi semua kolom dulu (saldo, risiko %, harga entry, harga stop loss).</div>';
+      return;
+    }
+    if (entry === stop) {
+      riskResult.innerHTML = '<div class="placeholder-note" style="margin-top:0;padding-top:0;border-top:none;">Harga entry dan stop loss tidak boleh sama.</div>';
+      return;
+    }
+
+    const riskAmountUsd = balance * (riskPct / 100);
+    const stopDistance = Math.abs(entry - stop);
+    const stopDistancePct = (stopDistance / entry) * 100;
+    const positionSizeUsd = riskAmountUsd / (stopDistance / entry);
+    const positionUnits = positionSizeUsd / entry;
+    const isLong = stop < entry;
+
+    riskResult.innerHTML = `
+      <div class="list-row"><span class="asset">Risiko (uang)</span><span class="val">$${riskAmountUsd.toFixed(2)}</span></div>
+      <div class="list-row"><span class="asset">Jarak ke stop loss</span><span class="val">${stopDistancePct.toFixed(2)}%</span></div>
+      <div class="list-row"><span class="asset">Ukuran posisi maksimal</span><span class="val">$${positionSizeUsd.toFixed(2)}</span></div>
+      <div class="list-row"><span class="asset">≈ jumlah unit/token</span><span class="val">${positionUnits.toFixed(4)}</span></div>
+      <div class="list-row"><span class="asset">Arah</span><span class="val">${isLong ? 'Long (SL di bawah entry)' : 'Short (SL di atas entry)'}</span></div>
+      <div class="placeholder-note" style="margin-top:12px;">Ini cuma perhitungan matematis dari input kamu — bukan rekomendasi entry/exit. Kalau ukuran posisi lebih besar dari saldo kamu, artinya stop loss-nya terlalu dekat untuk risiko segitu; pertimbangkan lebarkan SL atau kecilkan % risiko.</div>
+    `;
+  });
+
+  async function loadWinRate(){
+    const body = document.getElementById('winrateBody');
+    if (!supabase || !body) return;
+    const { data, error } = await supabase
+      .from('alert_outcomes')
+      .select('*')
+      .order('checked_at', { ascending: false })
+      .limit(200);
+
+    if (error) {
+      body.innerHTML = `<div class="placeholder-note" style="margin-top:0;padding-top:0;border-top:none;">Gagal memuat data: ${error.message}</div>`;
+      return;
+    }
+    if (!data || data.length === 0) {
+      body.innerHTML = '<div class="placeholder-note" style="margin-top:0;padding-top:0;border-top:none;">Belum ada data outcome. Edge Function check-alert-outcomes butuh minimal 24 jam berjalan dulu sebelum ada hasil.</div>';
+      return;
+    }
+
+    const wins = data.filter(o => o.outcome === 'win').length;
+    const losses = data.filter(o => o.outcome === 'loss').length;
+    const neutral = data.filter(o => o.outcome === 'neutral').length;
+    const decisive = wins + losses;
+    const winPct = decisive > 0 ? (wins / decisive) * 100 : 0;
+
+    const freshnessEl = document.getElementById('winrateUpdated');
+    if (freshnessEl) freshnessEl.textContent = `${data.length} sampel`;
+
+    body.innerHTML = `
+      <div class="list-row"><span class="asset">Win rate (dari sinyal yang decisive)</span><span class="val" style="color:${winPct >= 50 ? 'var(--teal)' : 'var(--danger)'};">${winPct.toFixed(1)}%</span></div>
+      <div class="list-row"><span class="asset">Win / Loss / Neutral</span><span class="val">${wins} / ${losses} / ${neutral}</span></div>
+    `;
+  }
+
+  loadWinRate();
+  setInterval(loadWinRate, 300000); // win rate gak perlu secepat alert, tiap 5 menit cukup
+
   const connectBtn = document.getElementById('connectBtn');
   const walletArea = document.getElementById('walletArea');
   const errorBox = document.getElementById('errorBox');
@@ -408,11 +651,6 @@
   const connectedView = document.getElementById('connectedView');
   const balanceValue = document.getElementById('balanceValue');
   const walletAddress = document.getElementById('walletAddress');
-  const watchlistRows = document.getElementById('watchlistRows');
-
-  // Sesuai WATCHED_ASSETS di config.py
-  const WATCHLIST = ["BTC", "ETH", "SOL", "DOGE", "BONK", "PENGU"];
-
   function showError(msg){
     errorBox.textContent = msg;
     errorBox.style.display = 'block';
@@ -420,12 +658,6 @@
 
   function shortAddr(addr){
     return addr.slice(0,4) + '…' + addr.slice(-4);
-  }
-
-  function renderWatchlist(){
-    watchlistRows.innerHTML = WATCHLIST.map(a =>
-      `<div class="list-row"><span class="asset">${a}</span><span class="val">menunggu data</span></div>`
-    ).join('');
   }
 
   async function fetchBalance(pubkeyStr){
@@ -479,7 +711,7 @@
     disconnectedView.style.display = 'none';
     connectedView.style.display = 'block';
     walletAddress.textContent = pubkey;
-    renderWatchlist();
+    updateWatchlistDisplay();
 
     try {
       const sol = await fetchBalance(pubkey);
