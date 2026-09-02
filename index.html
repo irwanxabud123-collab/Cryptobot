@@ -256,8 +256,8 @@
   // Isi 2 nilai ini dari Project Settings > API di Supabase kamu.
   // SUPABASE_ANON_KEY aman ditaruh di frontend (read-only lewat RLS policy di schema.sql).
   // JANGAN pernah taruh service_role key di sini.
-  const SUPABASE_URL = 'ISI_URL_PROJECT_SUPABASE_KAMU';
-  const SUPABASE_ANON_KEY = 'ISI_ANON_KEY_KAMU';
+  const SUPABASE_URL = 'https://ylaednlaqgunzfuaagit.supabase.co';
+  const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlsYWVkbmxhcWd1bnpmdWFhZ2l0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgxNjgxMTYsImV4cCI6MjEwMzc0NDExNn0._z6aEVYcHLwEj2WLUoRGBGHEnHEf7a-_YM9FXxDSm1g';
 
   let supabase = null;
   if (!SUPABASE_URL.startsWith('ISI_')) {
