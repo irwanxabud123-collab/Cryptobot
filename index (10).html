@@ -1,0 +1,503 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Market Watch — Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0D1117;
+    --panel:#161B22;
+    --panel-2:#1B222D;
+    --border:#262B36;
+    --text:#E6E8EB;
+    --text-dim:#8B92A0;
+    --purple:#9945FF;
+    --teal:#14F195;
+    --danger:#F0546A;
+    --radius:10px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{
+    background:var(--bg);
+    color:var(--text);
+    font-family:'Inter',sans-serif;
+    min-height:100vh;
+    line-height:1.5;
+  }
+  header{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    padding:20px 24px;
+    border-bottom:1px solid var(--border);
+    flex-wrap:wrap;
+    gap:12px;
+  }
+  .brand{
+    font-family:'Space Grotesk',sans-serif;
+    font-weight:600;
+    font-size:19px;
+    display:flex;
+    align-items:center;
+    gap:10px;
+  }
+  .brand-dot{
+    width:9px;height:9px;border-radius:50%;
+    background:linear-gradient(135deg,var(--purple),var(--teal));
+    flex-shrink:0;
+  }
+  .stage-tag{
+    font-size:12px;
+    color:var(--text-dim);
+    border:1px solid var(--border);
+    padding:3px 9px;
+    border-radius:20px;
+  }
+  #connectBtn{
+    background:linear-gradient(135deg,var(--purple),var(--teal));
+    color:#08110C;
+    border:none;
+    font-family:'Inter',sans-serif;
+    font-weight:600;
+    font-size:14px;
+    padding:10px 18px;
+    border-radius:8px;
+    cursor:pointer;
+  }
+  #connectBtn:hover{filter:brightness(1.08);}
+  #connectBtn:disabled{opacity:0.6;cursor:default;}
+  .wallet-chip{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    background:var(--panel);
+    border:1px solid var(--border);
+    padding:8px 14px;
+    border-radius:8px;
+    font-family:'IBM Plex Mono',monospace;
+    font-size:13px;
+  }
+  .wallet-chip .dot{width:7px;height:7px;border-radius:50%;background:var(--teal);}
+  main{
+    max-width:960px;
+    margin:0 auto;
+    padding:32px 24px 60px;
+  }
+  .hero{
+    margin-bottom:28px;
+  }
+  .hero h1{
+    font-family:'Space Grotesk',sans-serif;
+    font-weight:600;
+    font-size:26px;
+    margin-bottom:6px;
+  }
+  .hero p{
+    color:var(--text-dim);
+    font-size:14px;
+    max-width:56ch;
+  }
+  .empty-state{
+    background:var(--panel);
+    border:1px solid var(--border);
+    border-radius:var(--radius);
+    padding:40px 24px;
+    text-align:left;
+  }
+  .empty-state h2{
+    font-family:'Space Grotesk',sans-serif;
+    font-size:17px;
+    margin-bottom:8px;
+  }
+  .empty-state p{
+    color:var(--text-dim);
+    font-size:14px;
+    max-width:48ch;
+    margin-bottom:18px;
+  }
+  .grid{
+    display:grid;
+    grid-template-columns:1.1fr 1fr;
+    gap:16px;
+  }
+  @media (max-width:720px){
+    .grid{grid-template-columns:1fr;}
+  }
+  .card{
+    background:var(--panel);
+    border:1px solid var(--border);
+    border-radius:var(--radius);
+    padding:22px;
+  }
+  .card h3{
+    font-family:'Space Grotesk',sans-serif;
+    font-size:14px;
+    font-weight:600;
+    color:var(--text-dim);
+    margin-bottom:16px;
+  }
+  .balance-row{
+    display:flex;
+    align-items:baseline;
+    gap:10px;
+    margin-bottom:4px;
+  }
+  .balance-num{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:34px;
+    font-weight:500;
+  }
+  .balance-unit{
+    color:var(--text-dim);
+    font-size:15px;
+  }
+  .balance-sub{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:12px;
+    color:var(--text-dim);
+    word-break:break-all;
+  }
+  .list-row{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    padding:10px 0;
+    border-bottom:1px solid var(--border);
+    font-size:13px;
+  }
+  .list-row:last-child{border-bottom:none;}
+  .list-row .asset{font-weight:500;}
+  .list-row .val{font-family:'IBM Plex Mono',monospace;color:var(--text-dim);}
+  .placeholder-note{
+    margin-top:16px;
+    font-size:12px;
+    color:var(--text-dim);
+    border-top:1px dashed var(--border);
+    padding-top:12px;
+  }
+  .screener-item{
+    padding:12px 0;
+    border-bottom:1px solid var(--border);
+  }
+  .screener-item:last-child{border-bottom:none;}
+  .screener-head{
+    display:flex;
+    justify-content:space-between;
+    align-items:baseline;
+    gap:10px;
+    font-size:13px;
+  }
+  .screener-head .sym{font-weight:600;}
+  .screener-head .name{color:var(--text-dim);font-weight:400;font-size:12px;}
+  .score-badge{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:11px;
+    padding:2px 8px;
+    border-radius:20px;
+    border:1px solid var(--border);
+    white-space:nowrap;
+  }
+  .score-high{color:var(--teal);border-color:rgba(20,241,149,0.4);}
+  .score-medium{color:#E8B339;border-color:rgba(232,179,57,0.4);}
+  .score-low{color:var(--text-dim);}
+  .screener-meta{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:11px;
+    color:var(--text-dim);
+    margin-top:4px;
+  }
+  .screener-reasons{
+    margin-top:6px;
+    font-size:12px;
+    color:var(--text-dim);
+    list-style:none;
+  }
+  .screener-reasons li{
+    padding-left:14px;
+    position:relative;
+    margin-top:2px;
+  }
+  .screener-reasons li::before{
+    content:"·";
+    position:absolute;
+    left:2px;
+  }
+  #errorBox{
+    display:none;
+    background:rgba(240,84,106,0.08);
+    border:1px solid rgba(240,84,106,0.4);
+    color:var(--danger);
+    padding:12px 16px;
+    border-radius:8px;
+    font-size:13px;
+    margin-bottom:20px;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <span class="brand-dot"></span>
+    Market Watch
+    <span class="stage-tag">Tahap 1 — wallet & saldo</span>
+  </div>
+  <div id="walletArea">
+    <button id="connectBtn">Connect Phantom</button>
+  </div>
+</header>
+
+<main>
+  <div id="errorBox"></div>
+
+  <div id="disconnectedView" class="hero">
+    <h1>Belum terhubung ke wallet</h1>
+    <p>Klik "Connect Phantom" di kanan atas untuk lihat saldo SOL kamu. Aplikasi ini tidak pernah menyimpan atau meminta private key — semua transaksi nanti tetap kamu yang approve manual di Phantom.</p>
+  </div>
+
+  <div id="connectedView" style="display:none;">
+    <div class="grid">
+      <div class="card">
+        <h3>Saldo Wallet</h3>
+        <div class="balance-row">
+          <span class="balance-num" id="balanceValue">—</span>
+          <span class="balance-unit">SOL</span>
+        </div>
+        <div class="balance-sub" id="walletAddress"></div>
+      </div>
+
+      <div class="card">
+        <h3>Watchlist (dari config.py)</h3>
+        <div id="watchlistRows"></div>
+        <div class="placeholder-note">Harga live & sinyal RSI/volume dari signal_engine.py akan masuk di Tahap 2, setelah engine disambungkan ke Supabase.</div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:16px;">
+      <h3>Alert Terbaru</h3>
+      <div id="alertRows"><div class="placeholder-note" style="margin-top:0;padding-top:0;border-top:none;">Memuat…</div></div>
+    </div>
+
+    <div class="card" style="margin-top:16px;">
+      <h3>Token Screener — Solana Baru (Jupiter organicScore)</h3>
+      <div id="screenerRows"><div class="placeholder-note" style="margin-top:0;padding-top:0;border-top:none;">Memuat…</div></div>
+      <div class="placeholder-note">⚠️ Filter ini cuma cek organicScore + mint/freeze authority + top holder %. LP lock/burn BELUM diverifikasi otomatis — selalu cek manual di DexScreener/jup.ag sebelum swap token manapun dari daftar ini.</div>
+    </div>
+
+    <div class="card" style="margin-top:16px;">
+      <h3>Posisi & Eksekusi</h3>
+      <div class="placeholder-note" style="margin-top:0;padding-top:0;border-top:none;">
+        Belum tersedia. Tombol "Buka Posisi" via Jupiter Perps butuh Jupiter Perps SDK yang harus di-bundle lewat build step (Next.js), tidak bisa jalan sebagai file HTML tunggal seperti ini — dan belum boleh aktif sebelum signal_engine tervalidasi lewat backtest (winrate/expectancy). Ini bagian yang masih perlu dibangun terpisah.
+      </div>
+    </div>
+  </div>
+</main>
+
+<script type="module">
+  import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+
+  // Isi 2 nilai ini dari Project Settings > API di Supabase kamu.
+  // SUPABASE_ANON_KEY aman ditaruh di frontend (read-only lewat RLS policy di schema.sql).
+  // JANGAN pernah taruh service_role key di sini.
+  const SUPABASE_URL = 'ISI_URL_PROJECT_SUPABASE_KAMU';
+  const SUPABASE_ANON_KEY = 'ISI_ANON_KEY_KAMU';
+
+  let supabase = null;
+  if (!SUPABASE_URL.startsWith('ISI_')) {
+    supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  }
+
+  const urgencyColor = { tinggi: 'var(--danger)', sedang: '#E8B339', rendah: 'var(--text-dim)' };
+
+  async function loadAlerts(){
+    const alertRows = document.getElementById('alertRows');
+    if (!supabase) {
+      alertRows.innerHTML = '<div class="placeholder-note" style="margin-top:0;padding-top:0;border-top:none;">Isi SUPABASE_URL & SUPABASE_ANON_KEY di kode dulu untuk memuat alert dari poll-market Edge Function.</div>';
+      return;
+    }
+    const { data, error } = await supabase
+      .from('alerts')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(15);
+
+    if (error) {
+      alertRows.innerHTML = `<div class="placeholder-note" style="margin-top:0;padding-top:0;border-top:none;">Gagal memuat alert: ${error.message}</div>`;
+      return;
+    }
+    if (!data || data.length === 0) {
+      alertRows.innerHTML = '<div class="placeholder-note" style="margin-top:0;padding-top:0;border-top:none;">Belum ada alert tersimpan. Cek apakah Edge Function poll-market sudah dijadwalkan lewat pg_cron.</div>';
+      return;
+    }
+    alertRows.innerHTML = data.map(a => `
+      <div class="list-row" style="align-items:flex-start;">
+        <div>
+          <div class="asset">${a.asset} — $${a.current_price} <span style="color:${urgencyColor[a.urgency] || 'var(--text-dim)'};font-size:11px;">● ${a.urgency}</span></div>
+          <div style="color:var(--text-dim);font-size:12px;margin-top:2px;">${a.bias} · ${new Date(a.created_at).toLocaleString('id-ID')}</div>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  loadAlerts();
+
+  const scoreClass = (label) => label === 'high' ? 'score-high' : label === 'medium' ? 'score-medium' : 'score-low';
+
+  function fmtUsd(n){
+    if (n === null || n === undefined) return '—';
+    return '$' + Number(n).toLocaleString('en-US', { maximumFractionDigits: n < 1 ? 6 : 2 });
+  }
+
+  function fmtPct(n){
+    if (n === null || n === undefined) return '—';
+    const sign = n > 0 ? '+' : '';
+    return `${sign}${Number(n).toFixed(2)}%`;
+  }
+
+  async function loadTokenScreenerAlerts(){
+    const screenerRows = document.getElementById('screenerRows');
+    if (!supabase) {
+      screenerRows.innerHTML = '<div class="placeholder-note" style="margin-top:0;padding-top:0;border-top:none;">Isi SUPABASE_URL & SUPABASE_ANON_KEY di kode dulu untuk memuat hasil dari Edge Function token-screener.</div>';
+      return;
+    }
+    const { data, error } = await supabase
+      .from('token_screener_alerts')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(15);
+
+    if (error) {
+      screenerRows.innerHTML = `<div class="placeholder-note" style="margin-top:0;padding-top:0;border-top:none;">Gagal memuat token screener: ${error.message}</div>`;
+      return;
+    }
+    if (!data || data.length === 0) {
+      screenerRows.innerHTML = '<div class="placeholder-note" style="margin-top:0;padding-top:0;border-top:none;">Belum ada token yang lolos filter. Cek apakah Edge Function token-screener sudah dijadwalkan lewat pg_cron (tiap 30 menit).</div>';
+      return;
+    }
+
+    screenerRows.innerHTML = data.map(t => {
+      const label = t.organic_score >= 70 ? 'high' : t.organic_score >= 50 ? 'medium' : 'low';
+      const reasons = Array.isArray(t.reasons) ? t.reasons : [];
+      return `
+        <div class="screener-item">
+          <div class="screener-head">
+            <span><span class="sym">${t.token_symbol || '?'}</span> <span class="name">${t.token_name || ''}</span></span>
+            <span class="score-badge ${scoreClass(label)}">Organic ${Number(t.organic_score ?? 0).toFixed(0)}</span>
+          </div>
+          <div class="screener-meta">
+            Liquidity ${fmtUsd(t.liquidity_usd)} · Vol 24h ${fmtUsd(t.volume_24h_usd)} · 24h ${fmtPct(t.price_change_24h_pct)} · Top holder ${t.top_holder_pct != null ? Number(t.top_holder_pct).toFixed(2) + '%' : '—'}
+          </div>
+          <div class="screener-meta" style="word-break:break-all;">${t.token_address || ''}</div>
+          ${reasons.length ? `<ul class="screener-reasons">${reasons.map(r => `<li>${r}</li>`).join('')}</ul>` : ''}
+          <div class="screener-meta" style="margin-top:4px;">${new Date(t.created_at).toLocaleString('id-ID')}</div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  loadTokenScreenerAlerts();
+
+  const connectBtn = document.getElementById('connectBtn');
+  const walletArea = document.getElementById('walletArea');
+  const errorBox = document.getElementById('errorBox');
+  const disconnectedView = document.getElementById('disconnectedView');
+  const connectedView = document.getElementById('connectedView');
+  const balanceValue = document.getElementById('balanceValue');
+  const walletAddress = document.getElementById('walletAddress');
+  const watchlistRows = document.getElementById('watchlistRows');
+
+  // Sesuai WATCHED_ASSETS di config.py
+  const WATCHLIST = ["BTC", "ETH", "SOL", "DOGE", "BONK", "PENGU"];
+
+  function showError(msg){
+    errorBox.textContent = msg;
+    errorBox.style.display = 'block';
+  }
+
+  function shortAddr(addr){
+    return addr.slice(0,4) + '…' + addr.slice(-4);
+  }
+
+  function renderWatchlist(){
+    watchlistRows.innerHTML = WATCHLIST.map(a =>
+      `<div class="list-row"><span class="asset">${a}</span><span class="val">menunggu data</span></div>`
+    ).join('');
+  }
+
+  async function fetchBalance(pubkeyStr){
+    const res = await fetch('https://api.mainnet-beta.solana.com', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'getBalance',
+        params: [pubkeyStr]
+      })
+    });
+    const data = await res.json();
+    if (data.error) throw new Error(data.error.message || 'RPC error');
+    return data.result.value / 1e9; // lamports -> SOL
+  }
+
+  async function connectWallet(triggeredByUser = true){
+    errorBox.style.display = 'none';
+
+    if (!window.solana || !window.solana.isPhantom) {
+      if (triggeredByUser) {
+        showError('Phantom wallet tidak terdeteksi. Install extension Phantom di browser ini dulu, atau buka lewat browser bawaan app Phantom di HP.');
+      }
+      return;
+    }
+
+    if (triggeredByUser) {
+      connectBtn.disabled = true;
+      connectBtn.textContent = 'Menghubungkan…';
+    }
+
+    try {
+      const resp = await window.solana.connect(triggeredByUser ? {} : { onlyIfTrusted: true });
+      await renderConnectedState(resp.publicKey.toString());
+    } catch (err) {
+      connectBtn.disabled = false;
+      connectBtn.textContent = 'Connect Phantom';
+      if (!triggeredByUser) return; // auto-reconnect gagal diam-diam itu wajar (belum pernah trust / user reject dulu)
+      if (err.code === 4001) {
+        showError('Koneksi dibatalkan dari Phantom.');
+      } else {
+        showError('Gagal connect wallet: ' + (err.message || 'unknown error'));
+      }
+    }
+  }
+
+  async function renderConnectedState(pubkey){
+    walletArea.innerHTML = `<div class="wallet-chip"><span class="dot"></span>${shortAddr(pubkey)}</div>`;
+    disconnectedView.style.display = 'none';
+    connectedView.style.display = 'block';
+    walletAddress.textContent = pubkey;
+    renderWatchlist();
+
+    try {
+      const sol = await fetchBalance(pubkey);
+      balanceValue.textContent = sol.toFixed(4);
+    } catch (balErr) {
+      balanceValue.textContent = '—';
+      showError('Wallet terhubung, tapi gagal ambil saldo dari RPC publik (kemungkinan rate limit). Coba refresh sebentar lagi.');
+    }
+  }
+
+  connectBtn.addEventListener('click', () => connectWallet(true));
+
+  // Auto-reconnect kalau user sudah pernah approve situs ini sebelumnya —
+  // sekarang benar-benar update UI, bukan cuma nyambung diam-diam di background.
+  if (window.solana && window.solana.isPhantom) {
+    connectWallet(false);
+  }
+</script>
+
+</body>
+</html>
