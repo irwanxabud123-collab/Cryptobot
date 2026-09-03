@@ -105,8 +105,12 @@ export default function ScreenerCard() {
       setError(err.message);
       return;
     }
-    setError(null);
-    setRows(dedupeLatestPerToken((data as ScreenerRow[]) || [], 30));
+      setError(null);
+    const deduped = dedupeLatestPerToken((data as ScreenerRow[]) || [], 30);
+    const sorted = [...deduped].sort(
+      (a, b) => (b.organic_score ?? 0) - (a.organic_score ?? 0)
+    );
+    setRows(sorted);
   }, []);
 
   useEffect(() => {
