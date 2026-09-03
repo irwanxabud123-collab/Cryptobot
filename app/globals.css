@@ -1,7 +1,9 @@
 :root {
   --bg: #0d1117;
   --panel: #161b22;
+  --panel-raised: #1b212b;
   --border: #262b36;
+  --border-soft: #1d222c;
   --text: #e6e8eb;
   --text-dim: #8b92a0;
   --purple: #9945ff;
@@ -9,6 +11,7 @@
   --danger: #f0546a;
   --amber: #e8b339;
   --radius: 10px;
+  --radius-sm: 7px;
 }
 
 * {
@@ -29,7 +32,7 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 20px 24px;
+  padding: 20px 28px;
   border-bottom: 1px solid var(--border);
   flex-wrap: wrap;
   gap: 12px;
@@ -61,12 +64,12 @@ body {
 }
 
 main {
-  max-width: 960px;
+  max-width: 1120px;
   margin: 0 auto;
   padding: 32px 24px 60px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 18px;
 }
 
 .hero h1 {
@@ -88,8 +91,17 @@ main {
   gap: 16px;
 }
 
-@media (max-width: 720px) {
-  .grid {
+/* Dua kartu berdampingan di layar lebar (Alert + Screener), tumpuk di sempit */
+.row-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+  align-items: start;
+}
+
+@media (max-width: 860px) {
+  .grid,
+  .row-2 {
     grid-template-columns: 1fr;
   }
 }
@@ -159,6 +171,152 @@ main {
 .mono {
   font-family: 'IBM Plex Mono', monospace;
 }
+
+/* ---------- Watchlist: grid kartu + panel detail ---------- */
+
+.watchlist-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+@media (max-width: 640px) {
+  .watchlist-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+  }
+}
+
+.watch-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  text-align: left;
+  background: var(--panel-raised);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  cursor: pointer;
+  font-family: inherit;
+  color: inherit;
+}
+
+.watch-card:hover {
+  border-color: var(--text-dim);
+  border-left-color: var(--text-dim);
+}
+
+.watch-card.is-active {
+  background: var(--panel);
+  border-color: var(--purple);
+  border-left-color: var(--purple);
+}
+
+.watch-card--ok {
+  border-left-color: var(--teal);
+}
+.watch-card--ok:hover {
+  border-left-color: var(--teal);
+}
+
+.watch-card--bad {
+  border-left-color: var(--danger);
+}
+.watch-card--bad:hover {
+  border-left-color: var(--danger);
+}
+
+.watch-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.watch-card-asset {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.watch-card-badge {
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 20px;
+  border: 1px solid currentColor;
+  white-space: nowrap;
+}
+
+.watch-card-price {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 15px;
+}
+
+.watch-card-rsi {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.watch-detail {
+  margin-top: 14px;
+  background: var(--panel-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 16px 18px;
+}
+
+.watch-detail-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.watch-detail-asset {
+  font-family: 'Space Grotesk', sans-serif;
+  font-weight: 600;
+  font-size: 15px;
+}
+
+.watch-detail-close {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  font-family: inherit;
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 20px;
+  cursor: pointer;
+}
+
+.watch-detail-close:hover {
+  color: var(--text);
+  border-color: var(--text-dim);
+}
+
+.watch-detail-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border-soft);
+  font-size: 13px;
+}
+
+.watch-detail-row:last-of-type {
+  border-bottom: none;
+}
+
+.watch-detail-row .label {
+  color: var(--text-dim);
+}
+
+.watch-detail-row .value {
+  font-family: 'IBM Plex Mono', monospace;
+  text-align: right;
+}
+
+/* ---------- Alert / screener accordion rows ---------- */
 
 .alert-item {
   padding: 10px 0;

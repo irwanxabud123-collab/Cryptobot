@@ -218,6 +218,7 @@ export default function WatchlistCard() {
   const [historyByAsset, setHistoryByAsset] = useState<Record<string, HistoryRow[]>>({});
   const [error, setError] = useState<string | null>(null);
   const [historyError, setHistoryError] = useState<string | null>(null);
+  const [selected, setSelected] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     if (!supabase) return;
@@ -287,6 +288,19 @@ export default function WatchlistCard() {
     return (SIGNAL_PRIORITY[sigA] ?? 1) - (SIGNAL_PRIORITY[sigB] ?? 1);
   });
 
+  // Detail lengkap (support/resistance + konfirmasi sinyal) cuma dihitung
+  // untuk aset yang lagi dibuka — bukan untuk semua kartu di grid.
+  const detailAsset = selected;
+  const detailRow = detailAsset ? byAsset[detailAsset] : undefined;
+  const detailHistory = detailAsset ? historyByAsset[detailAsset] ?? [] : [];
+  const detailPrice = detailRow ? Number(detailRow.current_price) : null;
+  const { support, resistance, enoughData } =
+    detailPrice != null
+      ? findSupportResistance(detailHistory, detailPrice)
+      : { support: null, resistance: null, enoughData: false };
+  const confirmation = confirmSignal(detailRow?.rsi_signal, detailHistory);
+  const showConfirmation = confirmation.status !== 'tidak berlaku';
+
   return (
     <div className="card">
       <h3>Watchlist (dari config.py)</h3>
@@ -298,72 +312,106 @@ export default function WatchlistCard() {
           migration &amp; Edge Function market-snapshot-history sudah dijalankan.
         </div>
       )}
-      {sorted.map((a) => {
-        const row = byAsset[a];
-        const history = historyByAsset[a] ?? [];
-        const currentPrice = row ? Number(row.current_price) : null;
-        const { support, resistance, enoughData } =
-          currentPrice != null
-            ? findSupportResistance(history, currentPrice)
-            : { support: null, resistance: null, enoughData: false };
-        const confirmation = confirmSignal(row?.rsi_signal, history);
-        const showConfirmation = confirmation.status !== 'tidak berlaku';
 
-        return (
-          <details className="alert-item" key={a}>
-            <summary>
-              <div className="list-row" style={{ border: 'none', padding: 0 }}>
-                <span className="asset">{a}</span>
-                <span className="val">
-                  {row ? (
-                    <>
-                      ${row.current_price}{' '}
-                      {row.rsi != null ? (
-                        <>
-                          · RSI {row.rsi}{' '}
-                          <span className={signalClass(row.rsi_signal)}>
-                            ({RSI_LABEL[row.rsi_signal ?? ''] ?? row.rsi_signal})
-                          </span>
-                          {showConfirmation && (
-                            <>
-                              {' · '}
-                              <span className={confirmationClass(confirmation.status)}>
-                                {confirmation.status}
-                              </span>
-                            </>
-                          )}
-                        </>
-                      ) : (
-                        '· menunggu data'
-                      )}
-                    </>
-                  ) : (
-                    'menunggu data'
-                  )}
-                </span>
+      <div className="watchlist-grid">
+        {sorted.map((a) => {
+          const row = byAsset[a];
+          const cls = signalClass(row?.rsi_signal);
+          const isExtreme = row?.rsi_signal === 'oversold' || row?.rsi_signal === 'overbought';
+          const isActive = selected === a;
+          return (
+            <button
+              key={a}
+              type="button"
+              className={`watch-card watch-card--${cls}${isActive ? ' is-active' : ''}`}
+              onClick={() => setSelected(isActive ? null : a)}
+              aria-expanded={isActive}
+            >
+              <div className="watch-card-top">
+                <span className="watch-card-asset">{a}</span>
+                {isExtreme && (
+                  <span className={`watch-card-badge ${cls}`}>
+                    {RSI_LABEL[row!.rsi_signal ?? ''] ?? row!.rsi_signal}
+                  </span>
+                )}
               </div>
-            </summary>
-            <div className="meta">
-              {!enoughData && 'Belum cukup data historis untuk hitung support/resistance.'}
-              {enoughData && !support && !resistance &&
-                'Belum ada level harga yang cukup sering disentuh dalam histori yang tersedia.'}
-              {enoughData && support &&
-                `Support terdekat: $${support.price.toFixed(6)} (disentuh ${support.touches}x, terakhir ${daysAgoLabel(support.lastTouchedAt)})`}
-              {enoughData && support && resistance && <br />}
-              {enoughData && resistance &&
-                `Resistance terdekat: $${resistance.price.toFixed(6)} (disentuh ${resistance.touches}x, terakhir ${daysAgoLabel(resistance.lastTouchedAt)})`}
+              <div className="watch-card-price">
+                {row ? `$${row.current_price}` : '—'}
+              </div>
+              <div className="watch-card-rsi">
+                {row?.rsi != null ? `RSI ${row.rsi}` : 'menunggu data'}
+              </div>
+            </button>
+          );
+        })}
+      </div>
+
+      {detailAsset && (
+        <div className="watch-detail">
+          <div className="watch-detail-head">
+            <span className="watch-detail-asset">{detailAsset}</span>
+            <button
+              type="button"
+              className="watch-detail-close"
+              onClick={() => setSelected(null)}
+            >
+              Tutup ✕
+            </button>
+          </div>
+
+          <div className="watch-detail-row">
+            <span className="label">Harga</span>
+            <span className="value">
+              {detailRow ? `$${detailRow.current_price}` : 'menunggu data'}
+            </span>
+          </div>
+          <div className="watch-detail-row">
+            <span className="label">RSI</span>
+            <span className={`value ${signalClass(detailRow?.rsi_signal)}`}>
+              {detailRow?.rsi != null
+                ? `${detailRow.rsi} (${RSI_LABEL[detailRow.rsi_signal ?? ''] ?? detailRow.rsi_signal})`
+                : 'menunggu data'}
+            </span>
+          </div>
+          {showConfirmation && (
+            <div className="watch-detail-row">
+              <span className="label">Konfirmasi MACD/volume</span>
+              <span className={`value ${confirmationClass(confirmation.status)}`}>
+                {confirmation.status}
+              </span>
             </div>
-            {showConfirmation && <div className="meta">{confirmation.reason}</div>}
-          </details>
-        );
-      })}
+          )}
+          <div className="watch-detail-row">
+            <span className="label">Support terdekat</span>
+            <span className="value">
+              {!enoughData
+                ? 'data belum cukup'
+                : support
+                ? `$${support.price.toFixed(6)} (${support.touches}x, ${daysAgoLabel(support.lastTouchedAt)})`
+                : 'belum ada level'}
+            </span>
+          </div>
+          <div className="watch-detail-row">
+            <span className="label">Resistance terdekat</span>
+            <span className="value">
+              {!enoughData
+                ? 'data belum cukup'
+                : resistance
+                ? `$${resistance.price.toFixed(6)} (${resistance.touches}x, ${daysAgoLabel(resistance.lastTouchedAt)})`
+                : 'belum ada level'}
+            </span>
+          </div>
+          {showConfirmation && <div className="meta">{confirmation.reason}</div>}
+        </div>
+      )}
+
       <div className="placeholder-note">
         Auto-refresh harga tiap {REFRESH_MS / 1000} detik, histori tiap{' '}
         {HISTORY_REFRESH_MS / 60_000} menit. Oversold/overbought ditaruh
         paling atas — itu titik RSI lagi di zona ekstrem (dipantau orang buat
-        kemungkinan reversal), bukan sinyal beli/jual. Support/resistance &
-        status konfirmasi murni fakta dari histori harga, bukan rekomendasi
-        transaksi.
+        kemungkinan reversal), bukan sinyal beli/jual. Klik kartu untuk lihat
+        support/resistance & status konfirmasi — murni fakta dari histori
+        harga, bukan rekomendasi transaksi.
       </div>
     </div>
   );

@@ -36,8 +36,12 @@ export default function Home() {
         )}
 
         <WatchlistCard />
-        <AlertsCard />
-        <ScreenerCard />
+
+        <div className="row-2">
+          <AlertsCard />
+          <ScreenerCard />
+        </div>
+
         <PositionsCard />
       </main>
     </>
