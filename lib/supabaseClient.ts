@@ -8,11 +8,3 @@ const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 // supaya build tidak crash cuma karena .env.local belum diisi.
 export const supabase: SupabaseClient | null =
   url && anonKey ? createClient(url, anonKey) : null;
-
-export function assertSupabaseConfigured(): asserts supabase is SupabaseClient {
-  if (!supabase) {
-    throw new Error(
-      'NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY belum diisi di .env.local'
-    );
-  }
-}

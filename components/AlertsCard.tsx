@@ -26,6 +26,14 @@ const URGENCY_CLASS: Record<string, string> = {
   rendah: 'urgency-low',
 };
 
+// Urgensi tinggi ditaruh paling atas, baru urut dari yang terbaru per level
+// urgensi yang sama — biar sinyal paling layak diperhatikan nggak ketimbun.
+const URGENCY_PRIORITY: Record<string, number> = {
+  tinggi: 0,
+  sedang: 1,
+  rendah: 2,
+};
+
 function Reason({ reason }: { reason: ReasonItem }) {
   if (typeof reason === 'string') return <li>{reason}</li>;
   const link = reason.link ? safeUrl(reason.link) : null;
@@ -54,7 +62,7 @@ export default function AlertsCard() {
       .from('alerts')
       .select('*')
       .order('created_at', { ascending: false })
-      .limit(15);
+      .limit(30);
     if (err) {
       setError(err.message);
       return;
@@ -69,6 +77,22 @@ export default function AlertsCard() {
 
   useInterval(refresh, REFRESH_MS);
 
+  const sorted = alerts
+    ? [...alerts].sort((a, b) => {
+        const diff =
+          (URGENCY_PRIORITY[a.urgency] ?? 2) -
+          (URGENCY_PRIORITY[b.urgency] ?? 2);
+        if (diff !== 0) return diff;
+        return (
+          new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        );
+      })
+    : null;
+
+  const hasPriority = sorted?.some(
+    (a) => a.urgency === 'tinggi' || a.urgency === 'sedang'
+  );
+
   return (
     <div className="card">
       <h3>Alert Terbaru</h3>
@@ -79,18 +103,32 @@ export default function AlertsCard() {
         </div>
       )}
       {error && <div className="error-inline">{error}</div>}
-      {supabase && !error && alerts === null && (
+      {supabase && !error && sorted === null && (
         <div className="placeholder-note">Memuat…</div>
       )}
-      {supabase && !error && alerts !== null && alerts.length === 0 && (
+      {supabase && !error && sorted !== null && sorted.length === 0 && (
         <div className="placeholder-note">
           Belum ada alert tersimpan. Cek apakah Edge Function poll-market
           sudah dijadwalkan lewat pg_cron.
         </div>
       )}
-      {alerts &&
-        alerts.map((a) => (
-          <details className="alert-item" key={a.id}>
+      {supabase &&
+        !error &&
+        sorted !== null &&
+        sorted.length > 0 &&
+        !hasPriority && (
+          <div className="placeholder-note">
+            Belum ada sinyal urgensi tinggi/sedang saat ini — semua masih
+            netral. Wajar, bukan berarti sistemnya nggak jalan.
+          </div>
+        )}
+      {sorted &&
+        sorted.map((a) => (
+          <details
+            className="alert-item"
+            key={a.id}
+            open={a.urgency === 'tinggi'}
+          >
             <summary>
               <div className="asset">
                 {a.asset} — ${a.current_price}{' '}

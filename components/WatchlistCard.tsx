@@ -21,6 +21,20 @@ const RSI_LABEL: Record<string, string> = {
   netral: 'netral',
 };
 
+// Sinyal ekstrem (oversold/overbought) ditaruh di atas, netral di bawah —
+// biar yang paling layak diperhatikan nggak kelewat di antara yang netral.
+const SIGNAL_PRIORITY: Record<string, number> = {
+  oversold: 0,
+  overbought: 0,
+  netral: 1,
+};
+
+function signalClass(signal: string | null | undefined) {
+  if (signal === 'oversold') return 'ok';
+  if (signal === 'overbought') return 'bad';
+  return 'unknown';
+}
+
 export default function WatchlistCard() {
   const [byAsset, setByAsset] = useState<Record<string, MarketSnapshotRow>>(
     {}
@@ -63,32 +77,48 @@ export default function WatchlistCard() {
     );
   }
 
+  const sorted = [...WATCHLIST].sort((a, b) => {
+    const sigA = byAsset[a]?.rsi_signal ?? 'netral';
+    const sigB = byAsset[b]?.rsi_signal ?? 'netral';
+    return (SIGNAL_PRIORITY[sigA] ?? 1) - (SIGNAL_PRIORITY[sigB] ?? 1);
+  });
+
   return (
     <div className="card">
       <h3>Watchlist (dari config.py)</h3>
       {error && <div className="error-inline">{error}</div>}
-      {WATCHLIST.map((a) => {
+      {sorted.map((a) => {
         const row = byAsset[a];
         return (
           <div className="list-row" key={a}>
             <span className="asset">{a}</span>
             <span className="val">
-              {row
-                ? `$${row.current_price} · ${
-                    row.rsi != null
-                      ? `RSI ${row.rsi} (${
-                          RSI_LABEL[row.rsi_signal ?? ''] ?? row.rsi_signal
-                        })`
-                      : 'menunggu data'
-                  }`
-                : 'menunggu data'}
+              {row ? (
+                <>
+                  ${row.current_price}{' '}
+                  {row.rsi != null ? (
+                    <>
+                      · RSI {row.rsi}{' '}
+                      <span className={signalClass(row.rsi_signal)}>
+                        ({RSI_LABEL[row.rsi_signal ?? ''] ?? row.rsi_signal})
+                      </span>
+                    </>
+                  ) : (
+                    '· menunggu data'
+                  )}
+                </>
+              ) : (
+                'menunggu data'
+              )}
             </span>
           </div>
         );
       })}
       <div className="placeholder-note">
-        Auto-refresh tiap {REFRESH_MS / 1000} detik — tidak perlu reload
-        manual lagi.
+        Auto-refresh tiap {REFRESH_MS / 1000} detik. Oversold/overbought
+        ditaruh paling atas — itu titik RSI lagi di zona ekstrem (dipantau
+        orang buat kemungkinan reversal), bukan sinyal beli/jual. Netral
+        berarti belum ada yang menonjol.
       </div>
     </div>
   );
