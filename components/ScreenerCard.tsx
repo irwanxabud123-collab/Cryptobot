@@ -6,6 +6,7 @@ import { useInterval } from '@/hooks/useInterval';
 import { safeUrl } from '@/lib/safeUrl';
 
 const REFRESH_MS = 30_000;
+const FIRST_SEEN_LOOKUP_LIMIT = 3000;
 
 type ReasonItem = string | { text: string; link?: string };
 
@@ -24,6 +25,18 @@ interface ScreenerRow {
   price_change_24h_pct: number | string | null;
   created_at: string;
   reasons?: ReasonItem[] | null;
+  // Field tambahan dari Jupiter Tokens API v2 — lihat migration
+  // 0002_token_screener_extra_fields.sql. Semuanya nullable: kalau Edge
+  // Function token-screener belum diupdate untuk mengisinya, atau Jupiter
+  // sendiri tidak mencantumkannya untuk token itu, field ini null dan
+  // ditampilkan apa adanya sebagai "tidak tersedia dari sumber data".
+  token_website?: string | null;
+  token_twitter?: string | null;
+  token_tags?: string[] | null;
+  token_created_at?: string | null;
+  // Sudah ada di skema sebelumnya (firstPool.createdAt dari Jupiter) —
+  // dipakai sebagai proxy umur token kalau token_created_at tidak ada.
+  pair_created_at?: string | null;
 }
 
 function dedupeLatestPerToken(rows: ScreenerRow[], limit: number) {
@@ -90,9 +103,39 @@ function reasonsFor(t: ScreenerRow): ReasonItem[] {
   return fallback;
 }
 
+function daysAgoLabel(iso: string): string {
+  const diffMs = Date.now() - new Date(iso).getTime();
+  const days = Math.floor(diffMs / 86_400_000);
+  if (days <= 0) return 'kurang dari 1 hari';
+  if (days === 1) return '1 hari';
+  return `${days} hari`;
+}
+
+// Umur token: prioritaskan tanggal mint asli dari Jupiter (token_created_at),
+// lalu tanggal pool pertama (pair_created_at, juga dari Jupiter), lalu
+// terakhir proxy "pertama kali muncul di tabel screener kita sendiri".
+// Kalau ketiganya nggak ada, terus terang bilang tidak diketahui — jangan
+// menebak.
+function tokenAgeLabel(
+  t: ScreenerRow,
+  firstSeenAt: string | undefined
+): string {
+  if (t.token_created_at) {
+    return `${daysAgoLabel(t.token_created_at)} (tanggal mint, dari Jupiter)`;
+  }
+  if (t.pair_created_at) {
+    return `${daysAgoLabel(t.pair_created_at)} (tanggal pool pertama dibuat, dari Jupiter — proxy, bukan tanggal mint)`;
+  }
+  if (firstSeenAt) {
+    return `${daysAgoLabel(firstSeenAt)} (proxy: pertama kali terdeteksi di screener kita, bukan tanggal mint asli)`;
+  }
+  return 'tidak tersedia dari sumber data';
+}
+
 export default function ScreenerCard() {
   const [rows, setRows] = useState<ScreenerRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [firstSeenByToken, setFirstSeenByToken] = useState<Record<string, string>>({});
 
   const refresh = useCallback(async () => {
     if (!supabase) return;
@@ -105,12 +148,33 @@ export default function ScreenerCard() {
       setError(err.message);
       return;
     }
-      setError(null);
+    setError(null);
     const deduped = dedupeLatestPerToken((data as ScreenerRow[]) || [], 30);
     const sorted = [...deduped].sort(
       (a, b) => (b.organic_score ?? 0) - (a.organic_score ?? 0)
     );
     setRows(sorted);
+
+    // Proxy umur token kalau Jupiter tidak kasih token_created_at/pair_created_at:
+    // cari created_at paling awal per token dari histori screener kita sendiri.
+    // Cuma dilakukan untuk token yang benar-benar butuh (biar hemat baris).
+    const needsProxy = sorted.filter((t) => !t.token_created_at && !t.pair_created_at);
+    if (needsProxy.length > 0) {
+      const addresses = needsProxy.map((t) => t.token_address);
+      const { data: historyRows, error: historyErr } = await supabase
+        .from('token_screener_alerts')
+        .select('token_address, created_at')
+        .in('token_address', addresses)
+        .order('created_at', { ascending: true })
+        .limit(FIRST_SEEN_LOOKUP_LIMIT);
+      if (!historyErr && historyRows) {
+        const firstSeen: Record<string, string> = {};
+        for (const r of historyRows as { token_address: string; created_at: string }[]) {
+          if (!firstSeen[r.token_address]) firstSeen[r.token_address] = r.created_at;
+        }
+        setFirstSeenByToken(firstSeen);
+      }
+    }
   }, []);
 
   useEffect(() => {
@@ -148,6 +212,8 @@ export default function ScreenerCard() {
           const rugcheckUrl = safeUrl(
             `https://rugcheck.xyz/tokens/${encodeURIComponent(t.token_address)}`
           );
+          const websiteUrl = t.token_website ? safeUrl(t.token_website) : null;
+          const twitterUrl = t.token_twitter ? safeUrl(t.token_twitter) : null;
           return (
             <details className="alert-item" key={t.token_address}>
               <summary>
@@ -198,6 +264,35 @@ export default function ScreenerCard() {
                     </li>
                   )
                 )}
+              </ul>
+              <ul className="alert-reasons" style={{ marginTop: 12 }}>
+                <li>Umur token: {tokenAgeLabel(t, firstSeenByToken[t.token_address])}</li>
+                <li>
+                  Website:{' '}
+                  {websiteUrl ? (
+                    <a href={websiteUrl} target="_blank" rel="noopener noreferrer">
+                      {websiteUrl} ↗
+                    </a>
+                  ) : (
+                    'tidak tersedia dari sumber data'
+                  )}
+                </li>
+                <li>
+                  Twitter/X:{' '}
+                  {twitterUrl ? (
+                    <a href={twitterUrl} target="_blank" rel="noopener noreferrer">
+                      {twitterUrl} ↗
+                    </a>
+                  ) : (
+                    'tidak tersedia dari sumber data'
+                  )}
+                </li>
+                <li>
+                  Tags:{' '}
+                  {t.token_tags && t.token_tags.length > 0
+                    ? t.token_tags.join(', ')
+                    : 'tidak tersedia dari sumber data'}
+                </li>
               </ul>
               <div className="links-row">
                 {dexUrl && (
