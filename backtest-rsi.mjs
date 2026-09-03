@@ -18,15 +18,28 @@ import { createClient } from '@supabase/supabase-js';
 import { readFileSync } from 'fs';
 
 function loadEnvLocal() {
-  try {
-    const text = readFileSync(new URL('../.env.local', import.meta.url), 'utf8');
-    for (const line of text.split('\n')) {
-      const m = line.match(/^([A-Z0-9_]+)=(.*)$/);
-      if (m) process.env[m[1]] = process.env[m[1]] ?? m[2].trim();
+  // Coba beberapa lokasi: sebelah file ini, satu folder di atas file ini,
+  // dan folder tempat perintah dijalankan (cwd) — supaya tetap jalan
+  // baik script ini ditaruh di root maupun di scripts/.
+  const candidates = [
+    new URL('./.env.local', import.meta.url),
+    new URL('../.env.local', import.meta.url),
+    new URL(`file://${process.cwd()}/.env.local`),
+  ];
+  for (const path of candidates) {
+    try {
+      const text = readFileSync(path, 'utf8');
+      for (const line of text.split('\n')) {
+        const m = line.match(/^([A-Z0-9_]+)=(.*)$/);
+        if (m) process.env[m[1]] = process.env[m[1]] ?? m[2].trim();
+      }
+      return;
+    } catch {
+      // coba lokasi berikutnya
     }
-  } catch {
-    // .env.local mungkin belum ada, lanjut pakai process.env biasa
   }
+  // Nggak ketemu di lokasi manapun, lanjut pakai process.env biasa (mungkin
+  // sudah di-set lewat cara lain).
 }
 loadEnvLocal();
 
