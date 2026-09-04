@@ -4,318 +4,559 @@ import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import { useInterval } from '@/hooks/useInterval';
 import { safeUrl } from '@/lib/safeUrl';
+import { buildVerdict, VerdictRole } from '@/lib/verdict';
 
-const REFRESH_MS = 30_000;
-const FIRST_SEEN_LOOKUP_LIMIT = 3000;
+// Sesuai WATCHED_ASSETS di config.py
+const WATCHLIST = ['BTC', 'ETH', 'SOL', 'DOGE', 'BONK', 'PENGU'];
+const REFRESH_MS = 20_000;
+
+// Support/resistance & konfirmasi sinyal tidak perlu recompute tiap 20 detik —
+// histori 100 titik terakhir cukup di-refresh tiap beberapa menit.
+const HISTORY_REFRESH_MS = 5 * 60_000;
+const HISTORY_LIMIT = 100;
+const MIN_HISTORY_FOR_LEVELS = 10;
+const TOUCH_TOLERANCE_PCT = 0.015; // ±1.5%
+const MIN_TOUCHES_FOR_LEVEL = 2;
+const VOLUME_TREND_WINDOW = 5; // rata-rata N snapshot sebelumnya utk bandingin volume terbaru
+const SPARKLINE_POINTS = 20; // berapa titik histori terakhir dipakai buat gambar garis kecil
+
+interface MarketSnapshotRow {
+  asset: string;
+  current_price: string | number;
+  rsi: number | null;
+  rsi_signal: 'oversold' | 'overbought' | 'netral' | null;
+}
+
+interface HistoryRow {
+  asset: string;
+  current_price: number;
+  rsi: number | null;
+  rsi_signal: string | null;
+  macd: number | null;
+  macd_signal: number | null;
+  volume: number | null;
+  snapshot_at: string;
+}
+
+interface PriceLevel {
+  price: number;
+  touches: number;
+  lastTouchedAt: string;
+}
+
+interface SignalConfirmation {
+  status: 'terkonfirmasi' | 'belum terkonfirmasi' | 'tidak berlaku';
+  reason: string;
+}
 
 type ReasonItem = string | { text: string; link?: string };
 
-interface ScreenerRow {
-  token_address: string;
-  token_symbol: string | null;
-  token_name: string | null;
-  organic_score: number | null;
-  mint_authority_renounced: boolean | null;
-  freeze_authority_renounced: boolean | null;
-  top_holder_pct: number | null;
-  rugcheck_checked: boolean | null;
-  rugcheck_rugged: boolean | null;
-  rugcheck_score: number | null;
-  momentum: string | null;
-  price_change_24h_pct: number | string | null;
+interface AssetAlertRow {
+  id: string | number;
+  current_price: string | number;
   created_at: string;
+  summary?: string | null;
   reasons?: ReasonItem[] | null;
-  // Field tambahan dari Jupiter Tokens API v2 — lihat migration
-  // 0002_token_screener_extra_fields.sql. Semuanya nullable: kalau Edge
-  // Function token-screener belum diupdate untuk mengisinya, atau Jupiter
-  // sendiri tidak mencantumkannya untuk token itu, field ini null dan
-  // ditampilkan apa adanya sebagai "tidak tersedia dari sumber data".
-  token_website?: string | null;
-  token_twitter?: string | null;
-  token_tags?: string[] | null;
-  token_created_at?: string | null;
-  // Sudah ada di skema sebelumnya (firstPool.createdAt dari Jupiter) —
-  // dipakai sebagai proxy umur token kalau token_created_at tidak ada.
-  pair_created_at?: string | null;
 }
 
-function dedupeLatestPerToken(rows: ScreenerRow[], limit: number) {
-  const seen = new Set<string>();
-  const out: ScreenerRow[] = [];
-  for (const row of rows) {
-    if (seen.has(row.token_address)) continue;
-    seen.add(row.token_address);
-    out.push(row);
-    if (out.length >= limit) break;
-  }
-  return out;
-}
+const ICON_COLOR_BY_ROLE: Record<VerdictRole, { bg: string; fg: string }> = {
+  success: { bg: 'rgba(20, 241, 149, 0.14)', fg: 'var(--teal)' },
+  danger: { bg: 'rgba(240, 84, 106, 0.14)', fg: 'var(--danger)' },
+  warning: { bg: 'rgba(232, 179, 57, 0.14)', fg: 'var(--amber)' },
+  muted: { bg: 'rgba(139, 146, 160, 0.14)', fg: 'var(--text-dim)' },
+};
 
-function boolBadge(
-  value: boolean | null,
-  trueLabel: string,
-  falseLabel: string,
-  unknownLabel: string
-) {
-  if (value === true) return <span className="ok">✓ {trueLabel}</span>;
-  if (value === false) return <span className="bad">✗ {falseLabel}</span>;
-  return <span className="unknown">? {unknownLabel}</span>;
-}
+const VERDICT_BADGE_CLASS: Record<VerdictRole, string> = {
+  success: 'verdict-badge verdict-kuat',
+  danger: 'verdict-badge verdict-waspada',
+  warning: 'verdict-badge verdict-netral',
+  muted: 'verdict-badge verdict-unknown',
+};
 
-function reasonsFor(t: ScreenerRow): ReasonItem[] {
-  if (Array.isArray(t.reasons) && t.reasons.length) return t.reasons;
-  const fallback: ReasonItem[] = [];
-  if (t.organic_score != null)
-    fallback.push(`Organic Score ${Number(t.organic_score).toFixed(1)}.`);
-  fallback.push(
-    `Mint authority: ${
-      t.mint_authority_renounced === true
-        ? 'sudah di-renounce'
-        : t.mint_authority_renounced === false
-        ? 'BELUM di-renounce'
-        : 'tidak diketahui'
-    }.`
-  );
-  fallback.push(
-    `Freeze authority: ${
-      t.freeze_authority_renounced === true
-        ? 'sudah di-renounce'
-        : t.freeze_authority_renounced === false
-        ? 'BELUM di-renounce'
-        : 'tidak diketahui'
-    }.`
-  );
-  if (t.top_holder_pct != null)
-    fallback.push(`Top holder ${Number(t.top_holder_pct).toFixed(2)}% dari supply.`);
-  if (t.rugcheck_checked === true) {
-    fallback.push(
-      `RugCheck: ${
-        t.rugcheck_rugged === true
-          ? 'ditandai rugged'
-          : 'tidak ada risk level danger terdeteksi'
-      }${t.rugcheck_score != null ? ` (score ${t.rugcheck_score})` : ''}.`
-    );
-  } else {
-    fallback.push('RugCheck: gagal/timeout saat cek terakhir — verifikasi manual di rugcheck.xyz.');
-  }
-  if (t.momentum) fallback.push(`Momentum dibanding scan sebelumnya: ${t.momentum}.`);
-  fallback.push('⚠️ LP lock/burn BELUM dijamin lengkap — verifikasi manual sebelum swap.');
-  return fallback;
-}
+// Urutan tampil: yang butuh perhatian (Waspada/Kuat) duluan, Netral/Data
+// kurang di belakang — biar yang paling layak dilihat nggak ketimbun.
+const VERDICT_ROLE_PRIORITY: Record<VerdictRole, number> = {
+  danger: 0,
+  success: 0,
+  warning: 1,
+  muted: 2,
+};
 
 function daysAgoLabel(iso: string): string {
   const diffMs = Date.now() - new Date(iso).getTime();
   const days = Math.floor(diffMs / 86_400_000);
-  if (days <= 0) return 'kurang dari 1 hari';
-  if (days === 1) return '1 hari';
-  return `${days} hari`;
+  if (days <= 0) return 'hari ini';
+  if (days === 1) return '1 hari lalu';
+  return `${days} hari lalu`;
 }
 
-// Umur token: prioritaskan tanggal mint asli dari Jupiter (token_created_at),
-// lalu tanggal pool pertama (pair_created_at, juga dari Jupiter), lalu
-// terakhir proxy "pertama kali muncul di tabel screener kita sendiri".
-// Kalau ketiganya nggak ada, terus terang bilang tidak diketahui — jangan
-// menebak.
-function tokenAgeLabel(
-  t: ScreenerRow,
-  firstSeenAt: string | undefined
-): string {
-  if (t.token_created_at) {
-    return `${daysAgoLabel(t.token_created_at)} (tanggal mint, dari Jupiter)`;
+// Klasterisasi harga sederhana: gabungkan harga historis yang jaraknya
+// dalam toleransi ±1.5% ke satu level, hitung berapa kali level itu
+// "disentuh" dan kapan terakhir disentuh.
+function clusterPriceLevels(points: { price: number; at: string }[]): PriceLevel[] {
+  const sorted = [...points].sort((a, b) => a.price - b.price);
+  const clusters: { sum: number; touches: { price: number; at: string }[] }[] = [];
+
+  for (const p of sorted) {
+    const target = clusters.find((c) => {
+      const avg = c.sum / c.touches.length;
+      return Math.abs(p.price - avg) / avg <= TOUCH_TOLERANCE_PCT;
+    });
+    if (target) {
+      target.sum += p.price;
+      target.touches.push(p);
+    } else {
+      clusters.push({ sum: p.price, touches: [p] });
+    }
   }
-  if (t.pair_created_at) {
-    return `${daysAgoLabel(t.pair_created_at)} (tanggal pool pertama dibuat, dari Jupiter — proxy, bukan tanggal mint)`;
-  }
-  if (firstSeenAt) {
-    return `${daysAgoLabel(firstSeenAt)} (proxy: pertama kali terdeteksi di screener kita, bukan tanggal mint asli)`;
-  }
-  return 'tidak tersedia dari sumber data';
+
+  return clusters.map((c) => ({
+    price: c.sum / c.touches.length,
+    touches: c.touches.length,
+    lastTouchedAt: c.touches.reduce((latest, t) => (t.at > latest ? t.at : latest), c.touches[0].at),
+  }));
 }
 
-export default function ScreenerCard() {
-  const [rows, setRows] = useState<ScreenerRow[] | null>(null);
+function findSupportResistance(
+  history: HistoryRow[],
+  currentPrice: number
+): { support: PriceLevel | null; resistance: PriceLevel | null; enoughData: boolean } {
+  if (history.length < MIN_HISTORY_FOR_LEVELS) {
+    return { support: null, resistance: null, enoughData: false };
+  }
+
+  const points = history.map((h) => ({ price: h.current_price, at: h.snapshot_at }));
+  const levels = clusterPriceLevels(points).filter((l) => l.touches >= MIN_TOUCHES_FOR_LEVEL);
+
+  const belowCurrent = levels
+    .filter((l) => l.price < currentPrice)
+    .sort((a, b) => b.price - a.price); // paling dekat di bawah harga sekarang
+  const aboveCurrent = levels
+    .filter((l) => l.price > currentPrice)
+    .sort((a, b) => a.price - b.price); // paling dekat di atas harga sekarang
+
+  return {
+    support: belowCurrent[0] ?? null,
+    resistance: aboveCurrent[0] ?? null,
+    enoughData: true,
+  };
+}
+
+// Konfirmasi sinyal RSI oversold/overbought lewat arah MACD + tren volume.
+// PENTING: macd/macd_signal/volume saat ini SELALU null di market_snapshot_history
+// (lihat migration 0001) karena market_snapshot sumbernya tidak punya kolom itu.
+// Fungsi ini sengaja tidak mengarang nilai — kalau datanya null, statusnya
+// eksplisit "belum terkonfirmasi" dengan alasan data belum tersedia.
+function confirmSignal(
+  rsiSignal: string | null | undefined,
+  history: HistoryRow[]
+): SignalConfirmation {
+  if (rsiSignal !== 'oversold' && rsiSignal !== 'overbought') {
+    return { status: 'tidak berlaku', reason: 'RSI netral — tidak ada sinyal ekstrem untuk dikonfirmasi.' };
+  }
+
+  const latest = history[0];
+  const hasMacd = latest?.macd != null && latest?.macd_signal != null;
+  const recentVolumes = history.slice(0, VOLUME_TREND_WINDOW + 1).map((h) => h.volume);
+  const hasVolume = recentVolumes.length > 1 && recentVolumes.every((v) => v != null);
+
+  if (!hasMacd && !hasVolume) {
+    return {
+      status: 'belum terkonfirmasi',
+      reason: `RSI ${rsiSignal}, tapi data MACD & volume belum tersedia dari sumber data — belum bisa dikonfirmasi.`,
+    };
+  }
+  if (!hasMacd) {
+    return {
+      status: 'belum terkonfirmasi',
+      reason: `RSI ${rsiSignal}, tapi data MACD belum tersedia dari sumber data — belum bisa dikonfirmasi.`,
+    };
+  }
+  if (!hasVolume) {
+    return {
+      status: 'belum terkonfirmasi',
+      reason: `RSI ${rsiSignal}, tapi data volume belum tersedia dari sumber data — belum bisa dikonfirmasi.`,
+    };
+  }
+
+  const macdRising = latest.macd! > (history[1]?.macd ?? latest.macd!);
+  const macdAboveSignal = latest.macd! > latest.macd_signal!;
+  const latestVolume = recentVolumes[0] as number;
+  const avgPriorVolume =
+    (recentVolumes.slice(1) as number[]).reduce((s, v) => s + v, 0) / (recentVolumes.length - 1);
+  const volumeRising = latestVolume > avgPriorVolume;
+
+  if (rsiSignal === 'oversold') {
+    if (macdRising && macdAboveSignal && volumeRising) {
+      return {
+        status: 'terkonfirmasi',
+        reason: 'RSI oversold, MACD sudah cross ke atas dan volume naik — konsisten dengan reversal.',
+      };
+    }
+    if (!macdRising) {
+      return {
+        status: 'belum terkonfirmasi',
+        reason: 'RSI oversold, tapi MACD masih menurun — belum terkonfirmasi.',
+      };
+    }
+    return {
+      status: 'belum terkonfirmasi',
+      reason: 'RSI oversold, MACD mulai naik tapi volume belum ikut naik — belum terkonfirmasi.',
+    };
+  }
+
+  // overbought
+  if (!macdRising && !macdAboveSignal && !volumeRising) {
+    return {
+      status: 'terkonfirmasi',
+      reason: 'RSI overbought, MACD sudah cross ke bawah dan volume mengecil — konsisten dengan reversal.',
+    };
+  }
+  if (macdRising || macdAboveSignal) {
+    return {
+      status: 'belum terkonfirmasi',
+      reason: 'RSI overbought, tapi MACD masih menguat/di atas garis sinyal — belum terkonfirmasi.',
+    };
+  }
+  return {
+    status: 'belum terkonfirmasi',
+    reason: 'RSI overbought, MACD mulai melemah tapi volume belum ikut turun — belum terkonfirmasi.',
+  };
+}
+
+// Bikin titik-titik polyline SVG dari histori (terbaru dulu -> dibalik jadi
+// lama ke baru), dinormalisasi ke lebar/tinggi kotak sparkline.
+function buildSparkline(history: HistoryRow[]): { points: string; trendUp: boolean } | null {
+  const prices = history
+    .slice(0, SPARKLINE_POINTS)
+    .map((h) => h.current_price)
+    .reverse();
+  if (prices.length < 2) return null;
+
+  const min = Math.min(...prices);
+  const max = Math.max(...prices);
+  const range = max - min || 1;
+  const w = 140;
+  const h = 28;
+
+  const points = prices
+    .map((p, i) => {
+      const x = (i / (prices.length - 1)) * w;
+      const y = h - ((p - min) / range) * h;
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    })
+    .join(' ');
+
+  return { points, trendUp: prices[prices.length - 1] >= prices[0] };
+}
+
+function Reason({ reason }: { reason: ReasonItem }) {
+  if (typeof reason === 'string') return <li>{reason}</li>;
+  const link = reason.link ? safeUrl(reason.link) : null;
+  return (
+    <li>
+      {reason.text}
+      {link && (
+        <>
+          {' '}
+          <a href={link} target="_blank" rel="noopener noreferrer">
+            baca sumber ↗
+          </a>
+        </>
+      )}
+    </li>
+  );
+}
+
+export default function WatchlistCard() {
+  const [byAsset, setByAsset] = useState<Record<string, MarketSnapshotRow>>({});
+  const [historyByAsset, setHistoryByAsset] = useState<Record<string, HistoryRow[]>>({});
   const [error, setError] = useState<string | null>(null);
-  const [firstSeenByToken, setFirstSeenByToken] = useState<Record<string, string>>({});
+  const [historyError, setHistoryError] = useState<string | null>(null);
+
+  const [selectedAsset, setSelectedAsset] = useState<string | null>(null);
+  const [assetAlerts, setAssetAlerts] = useState<AssetAlertRow[] | null>(null);
+  const [assetAlertsError, setAssetAlertsError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     if (!supabase) return;
     const { data, error: err } = await supabase
-      .from('token_screener_alerts')
+      .from('market_snapshot')
       .select('*')
-      .order('created_at', { ascending: false })
-      .limit(200);
+      .in('asset', WATCHLIST);
     if (err) {
       setError(err.message);
       return;
     }
     setError(null);
-    const deduped = dedupeLatestPerToken((data as ScreenerRow[]) || [], 30);
-    const sorted = [...deduped].sort(
-      (a, b) => (b.organic_score ?? 0) - (a.organic_score ?? 0)
-    );
-    setRows(sorted);
+    const map: Record<string, MarketSnapshotRow> = {};
+    (data || []).forEach((row) => {
+      map[(row as MarketSnapshotRow).asset] = row as MarketSnapshotRow;
+    });
+    setByAsset(map);
+  }, []);
 
-    // Proxy umur token kalau Jupiter tidak kasih token_created_at/pair_created_at:
-    // cari created_at paling awal per token dari histori screener kita sendiri.
-    // Cuma dilakukan untuk token yang benar-benar butuh (biar hemat baris).
-    const needsProxy = sorted.filter((t) => !t.token_created_at && !t.pair_created_at);
-    if (needsProxy.length > 0) {
-      const addresses = needsProxy.map((t) => t.token_address);
-      const { data: historyRows, error: historyErr } = await supabase
-        .from('token_screener_alerts')
-        .select('token_address, created_at')
-        .in('token_address', addresses)
-        .order('created_at', { ascending: true })
-        .limit(FIRST_SEEN_LOOKUP_LIMIT);
-      if (!historyErr && historyRows) {
-        const firstSeen: Record<string, string> = {};
-        for (const r of historyRows as { token_address: string; created_at: string }[]) {
-          if (!firstSeen[r.token_address]) firstSeen[r.token_address] = r.created_at;
-        }
-        setFirstSeenByToken(firstSeen);
-      }
+  const refreshHistory = useCallback(async () => {
+    if (!supabase) return;
+    // market_snapshot_history mungkin belum ada (migration 0001 belum di-apply) —
+    // gagal di sini tidak boleh mematikan harga terkini yang sudah tampil.
+    const { data, error: err } = await supabase
+      .from('market_snapshot_history')
+      .select('asset, current_price, rsi, rsi_signal, macd, macd_signal, volume, snapshot_at')
+      .in('asset', WATCHLIST)
+      .order('snapshot_at', { ascending: false })
+      .limit(HISTORY_LIMIT * WATCHLIST.length);
+    if (err) {
+      setHistoryError(err.message);
+      return;
     }
+    setHistoryError(null);
+    const grouped: Record<string, HistoryRow[]> = {};
+    (data || []).forEach((row) => {
+      const r = row as HistoryRow;
+      if (!grouped[r.asset]) grouped[r.asset] = [];
+      if (grouped[r.asset].length < HISTORY_LIMIT) grouped[r.asset].push(r);
+    });
+    setHistoryByAsset(grouped);
   }, []);
 
   useEffect(() => {
     refresh();
-  }, [refresh]);
+    refreshHistory();
+  }, [refresh, refreshHistory]);
 
   useInterval(refresh, REFRESH_MS);
+  useInterval(refreshHistory, HISTORY_REFRESH_MS);
+
+  // Berita/fundamental khusus aset yang lagi dibuka — baru diambil pas kartu
+  // diklik, bukan sekaligus semua aset tiap 20 detik (hemat query).
+  const refreshAssetAlerts = useCallback(async (asset: string) => {
+    if (!supabase) return;
+    const { data, error: err } = await supabase
+      .from('alerts')
+      .select('id, current_price, created_at, summary, reasons')
+      .eq('asset', asset)
+      .order('created_at', { ascending: false })
+      .limit(5);
+    if (err) {
+      setAssetAlertsError(err.message);
+      return;
+    }
+    setAssetAlertsError(null);
+    setAssetAlerts((data as AssetAlertRow[]) || []);
+  }, []);
+
+  useEffect(() => {
+    if (!selectedAsset) return;
+    setAssetAlerts(null);
+    refreshAssetAlerts(selectedAsset);
+  }, [selectedAsset, refreshAssetAlerts]);
+
+  if (!supabase) {
+    return (
+      <div className="card">
+        <h3>Watchlist (dari config.py)</h3>
+        <div className="placeholder-note">
+          Isi NEXT_PUBLIC_SUPABASE_URL & NEXT_PUBLIC_SUPABASE_ANON_KEY di
+          .env.local dulu.
+        </div>
+      </div>
+    );
+  }
+
+  // Hitung kesimpulan tiap aset sekali di sini, dipakai buat urutan tampil
+  // DAN buat tampilan grid/detail — biar konsisten satu sumber logika.
+  const computed = WATCHLIST.map((a) => {
+    const row = byAsset[a];
+    const history = historyByAsset[a] ?? [];
+    const currentPrice = row ? Number(row.current_price) : null;
+    const { support, resistance, enoughData } =
+      currentPrice != null
+        ? findSupportResistance(history, currentPrice)
+        : { support: null, resistance: null, enoughData: false };
+    const confirmation = confirmSignal(row?.rsi_signal, history);
+    const verdict = buildVerdict({
+      rsi: row?.rsi,
+      rsiSignal: row?.rsi_signal,
+      confirmation,
+      support,
+      resistance,
+      currentPrice,
+      enoughData,
+    });
+    const sparkline = buildSparkline(history);
+    return { asset: a, row, history, currentPrice, support, resistance, enoughData, confirmation, verdict, sparkline };
+  });
+
+  const sorted = [...computed].sort(
+    (a, b) => (VERDICT_ROLE_PRIORITY[a.verdict.role] ?? 1) - (VERDICT_ROLE_PRIORITY[b.verdict.role] ?? 1)
+  );
+
+  const countByRole = computed.reduce<Record<VerdictRole, number>>(
+    (acc, c) => {
+      acc[c.verdict.role] = (acc[c.verdict.role] ?? 0) + 1;
+      return acc;
+    },
+    { success: 0, danger: 0, warning: 0, muted: 0 }
+  );
+  const overallSummary = `${countByRole.danger} waspada · ${countByRole.success} kuat · ${countByRole.warning} netral${
+    countByRole.muted ? ` · ${countByRole.muted} data kurang` : ''
+  }`;
+
+  const selected = selectedAsset ? computed.find((c) => c.asset === selectedAsset) : null;
+
+  if (selected) {
+    const { asset, row, support, resistance, verdict, confirmation, sparkline } = selected;
+    const iconColors = ICON_COLOR_BY_ROLE[verdict.role];
+    return (
+      <div className="card">
+        <div className="asset-detail-head">
+          <button className="back-button" onClick={() => setSelectedAsset(null)}>
+            ← kembali
+          </button>
+          <div
+            className="watch-icon"
+            style={{ background: iconColors.bg, color: iconColors.fg }}
+          >
+            {asset}
+          </div>
+          <div>
+            <div className="asset-detail-title">{asset}</div>
+            <div className="asset-detail-price">
+              {row ? `$${row.current_price}` : 'menunggu data'}
+            </div>
+          </div>
+          <span className={VERDICT_BADGE_CLASS[verdict.role]} style={{ marginLeft: 'auto' }}>
+            {verdict.label}
+          </span>
+        </div>
+
+        {sparkline && (
+          <svg width="100%" height="50" viewBox="0 0 140 28" preserveAspectRatio="none">
+            <polyline
+              points={sparkline.points}
+              fill="none"
+              stroke={sparkline.trendUp ? 'var(--teal)' : 'var(--danger)'}
+              strokeWidth="2"
+            />
+          </svg>
+        )}
+
+        <div className="detail-section-title">Analisa teknikal</div>
+        <div className="detail-box">
+          <div className="detail-row">
+            <span className="label">RSI</span>
+            <span>{row?.rsi != null ? row.rsi : 'menunggu data'}</span>
+          </div>
+          <div className="detail-row">
+            <span className="label">Konfirmasi MACD/volume</span>
+            <span>{confirmation.status}</span>
+          </div>
+          <div className="detail-row">
+            <span className="label">Support terdekat</span>
+            <span>
+              {support
+                ? `$${support.price.toFixed(6)} (${support.touches}x, ${daysAgoLabel(support.lastTouchedAt)})`
+                : 'belum ada'}
+            </span>
+          </div>
+          <div className="detail-row">
+            <span className="label">Resistance terdekat</span>
+            <span>
+              {resistance
+                ? `$${resistance.price.toFixed(6)} (${resistance.touches}x, ${daysAgoLabel(resistance.lastTouchedAt)})`
+                : 'belum ada'}
+            </span>
+          </div>
+        </div>
+        <div className="meta" style={{ marginTop: 8 }}>{verdict.note}</div>
+
+        <div className="detail-section-title">Analisa fundamental / berita</div>
+        {assetAlertsError && <div className="error-inline">{assetAlertsError}</div>}
+        {!assetAlertsError && assetAlerts === null && (
+          <div className="placeholder-note">Memuat…</div>
+        )}
+        {!assetAlertsError && assetAlerts !== null && assetAlerts.length === 0 && (
+          <div className="placeholder-note">Belum ada catatan berita/fundamental untuk {asset}.</div>
+        )}
+        {assetAlerts && assetAlerts.length > 0 && (
+          <div className="detail-box">
+            {assetAlerts.map((a) => (
+              <div className="fundamental-item" key={a.id}>
+                {a.summary && <div>{a.summary}</div>}
+                {(a.reasons ?? []).length > 0 ? (
+                  <ul className="alert-reasons">
+                    {a.reasons!.map((r, i) => (
+                      <Reason reason={r} key={i} />
+                    ))}
+                  </ul>
+                ) : (
+                  !a.summary && <div>Tidak ada rincian tersimpan.</div>
+                )}
+                <div className="meta">{new Date(a.created_at).toLocaleString('id-ID')}</div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="card">
-      <h3>Token Screener — Solana Baru (Jupiter organicScore)</h3>
-      {!supabase && (
-        <div className="placeholder-note">
-          Isi env Supabase dulu untuk memuat hasil dari token-screener Edge
-          Function.
-        </div>
-      )}
+      <h3>Watchlist (dari config.py)</h3>
       {error && <div className="error-inline">{error}</div>}
-      {supabase && !error && rows === null && (
-        <div className="placeholder-note">Memuat…</div>
-      )}
-      {supabase && !error && rows !== null && rows.length === 0 && (
+      {historyError && (
         <div className="placeholder-note">
-          Belum ada token yang lolos filter. Cek apakah Edge Function
-          token-screener sudah dijadwalkan lewat pg_cron.
+          Histori snapshot belum bisa dimuat ({historyError}). Support/resistance
+          & konfirmasi sinyal butuh tabel market_snapshot_history — cek apakah
+          migration &amp; Edge Function market-snapshot-history sudah dijalankan.
         </div>
       )}
-      {rows &&
-        rows.map((t) => {
-          const priceChange =
-            t.price_change_24h_pct != null ? Number(t.price_change_24h_pct) : null;
-          const dexUrl = safeUrl(
-            `https://dexscreener.com/solana/${encodeURIComponent(t.token_address)}`
-          );
-          const rugcheckUrl = safeUrl(
-            `https://rugcheck.xyz/tokens/${encodeURIComponent(t.token_address)}`
-          );
-          const websiteUrl = t.token_website ? safeUrl(t.token_website) : null;
-          const twitterUrl = t.token_twitter ? safeUrl(t.token_twitter) : null;
+      <div className="watch-summary">{overallSummary}</div>
+      <div className="watch-grid">
+        {sorted.map(({ asset, row, verdict, sparkline }) => {
+          const iconColors = ICON_COLOR_BY_ROLE[verdict.role];
           return (
-            <details className="alert-item" key={t.token_address}>
-              <summary>
-                <div className="asset">
-                  {t.token_symbol || '?'} — {t.token_name || 'nama tidak diketahui'}{' '}
-                  <span
-                    className={
-                      priceChange == null
-                        ? 'unknown'
-                        : priceChange >= 0
-                        ? 'ok'
-                        : 'bad'
-                    }
-                    style={{ fontSize: 11 }}
-                  >
-                    ●{' '}
-                    {priceChange == null
-                      ? 'perubahan harga 24j tidak diketahui'
-                      : `${priceChange >= 0 ? '+' : ''}${priceChange.toFixed(2)}% / 24j`}
-                  </span>
+            <button
+              key={asset}
+              className="watch-card"
+              onClick={() => setSelectedAsset(asset)}
+            >
+              <div className="watch-card-head">
+                <div
+                  className="watch-icon"
+                  style={{ background: iconColors.bg, color: iconColors.fg }}
+                >
+                  {asset}
                 </div>
-                <div className="meta">
-                  Organic Score{' '}
-                  {t.organic_score != null ? Number(t.organic_score).toFixed(1) : 'tidak diketahui'}
-                  {' · '}
-                  {boolBadge(t.mint_authority_renounced, 'mint renounced', 'mint AKTIF', 'mint ?')}
-                  {' · '}
-                  {boolBadge(t.freeze_authority_renounced, 'freeze renounced', 'freeze AKTIF', 'freeze ?')}
-                  {' · '}
-                  {t.created_at ? new Date(t.created_at).toLocaleString('id-ID') : ''}
-                </div>
-              </summary>
-              <ul className="alert-reasons">
-                {reasonsFor(t).map((r, i) =>
-                  typeof r === 'string' ? (
-                    <li key={i}>{r}</li>
-                  ) : (
-                    <li key={i}>
-                      {r.text}
-                      {r.link && safeUrl(r.link) && (
-                        <>
-                          {' '}
-                          <a href={safeUrl(r.link)!} target="_blank" rel="noopener noreferrer">
-                            baca sumber ↗
-                          </a>
-                        </>
-                      )}
-                    </li>
-                  )
-                )}
-              </ul>
-              <ul className="alert-reasons" style={{ marginTop: 12 }}>
-                <li>Umur token: {tokenAgeLabel(t, firstSeenByToken[t.token_address])}</li>
-                <li>
-                  Website:{' '}
-                  {websiteUrl ? (
-                    <a href={websiteUrl} target="_blank" rel="noopener noreferrer">
-                      {websiteUrl} ↗
-                    </a>
-                  ) : (
-                    'tidak tersedia dari sumber data'
-                  )}
-                </li>
-                <li>
-                  Twitter/X:{' '}
-                  {twitterUrl ? (
-                    <a href={twitterUrl} target="_blank" rel="noopener noreferrer">
-                      {twitterUrl} ↗
-                    </a>
-                  ) : (
-                    'tidak tersedia dari sumber data'
-                  )}
-                </li>
-                <li>
-                  Tags:{' '}
-                  {t.token_tags && t.token_tags.length > 0
-                    ? t.token_tags.join(', ')
-                    : 'tidak tersedia dari sumber data'}
-                </li>
-              </ul>
-              <div className="links-row">
-                {dexUrl && (
-                  <a href={dexUrl} target="_blank" rel="noopener noreferrer">
-                    Cek di DexScreener ↗
-                  </a>
-                )}
-                {dexUrl && rugcheckUrl && ' · '}
-                {rugcheckUrl && (
-                  <a href={rugcheckUrl} target="_blank" rel="noopener noreferrer">
-                    Cek di RugCheck ↗
-                  </a>
-                )}
+                <div className="watch-name">{asset}</div>
               </div>
-            </details>
+              {sparkline ? (
+                <svg width="100%" height="28" viewBox="0 0 140 28" preserveAspectRatio="none">
+                  <polyline
+                    points={sparkline.points}
+                    fill="none"
+                    stroke={sparkline.trendUp ? 'var(--teal)' : 'var(--danger)'}
+                    strokeWidth="2"
+                  />
+                </svg>
+              ) : (
+                <div className="watch-reason">belum ada histori cukup</div>
+              )}
+              <div className="watch-price">{row ? `$${row.current_price}` : 'menunggu data'}</div>
+              <span className={VERDICT_BADGE_CLASS[verdict.role]}>{verdict.label}</span>
+              <div className="watch-reason">{verdict.note}</div>
+            </button>
           );
         })}
+      </div>
       <div className="placeholder-note">
-        Filter ini cuma cek organicScore + mint/freeze authority + top holder
-        % + RugCheck. LP lock/burn BELUM diverifikasi otomatis — selalu cek
-        manual di DexScreener/rugcheck.xyz sebelum swap token manapun dari
-        daftar ini. Ini daftar sinyal untuk kamu evaluasi sendiri, bukan
-        rekomendasi beli/jual.
+        Auto-refresh harga tiap {REFRESH_MS / 1000} detik, histori tiap{' '}
+        {HISTORY_REFRESH_MS / 60_000} menit. Klik salah satu kartu buat lihat
+        analisa teknikal & fundamental lengkap khusus aset itu. Kesimpulan di
+        atas dirangkum dari RSI, konfirmasi MACD/volume (kalau tersedia), dan
+        posisi harga ke support/resistance — bukan rekomendasi transaksi.
       </div>
     </div>
   );
